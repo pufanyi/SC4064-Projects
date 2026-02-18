@@ -1,0 +1,105 @@
+\documentclass{article}
+
+\usepackage[preprint]{neurips_2025}
+
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{hyperref}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
+\usepackage{amsmath}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+
+\title{SC4064 Proposal}
+
+\author{%
+  Aryan Jain\thanks{Equal contribution. Authors listed in alphabetical order.} \quad
+  Fanyi Pu\footnotemark[1] \quad
+  Ze Hong Maxwell Au\footnotemark[1] \\
+  School of Computer Science and Engineering\\
+  Nanyang Technological University, Singapore\\
+  \texttt{\{ARYAN017, FPU001, MAU002\}@e.ntu.edu.sg} \\
+}
+
+\begin{document}
+
+\maketitle
+
+\vspace{-1em}
+\begin{abstract}
+General Matrix--Matrix Multiplication (GEMM) is the computational backbone of modern deep learning.
+This project bridges \emph{kernel-level optimization} and \emph{system-level parallelism} by (i)~implementing and progressively optimizing CUDA GEMM kernels on a single GPU, and (ii)~extending to a multi-GPU Tensor Parallel linear layer with NCCL-based communication.
+We systematically evaluate the compute--communication trade-off, strong/weak scaling behavior, and the impact of kernel-level optimization on distributed scaling efficiency.
+\end{abstract}
+
+\section{Introduction}
+\vspace{-0.3em}
+
+General Matrix--Matrix Multiplication (GEMM) underpins virtually all compute-intensive operations in deep learning \citep{jia2018dissecting}.
+In transformer architectures \citep{vaswani2017attention}, multi-head attention and feedforward layers reduce to large matrix multiplications, making GEMM performance a first-order concern.
+As model sizes grow beyond the memory capacity of a single accelerator, \textbf{Tensor Parallelism} \citep{shoeybi2019megatron} has become standard for distributing parameters across GPUs, where inter-GPU communication becomes a critical throughput bottleneck.
+
+Despite vendor-optimized libraries such as cuBLAS \citep{cublas}, understanding the interplay between kernel-level compute efficiency and system-level communication overhead remains essential.
+This project aims to:
+(1)~systematically optimize GEMM on a single GPU using CUDA;
+(2)~implement a multi-GPU Tensor Parallel linear layer (forward and backward) using NCCL;
+and (3)~quantitatively analyze how kernel optimization interacts with distributed scaling efficiency.
+
+\vspace{-0.3em}
+\section{Proposed methodology}
+\vspace{-0.3em}
+
+\paragraph{Single-GPU GEMM optimization.}
+We implement GEMM from scratch in CUDA and progressively optimize:
+(1)~\textbf{naive implementation} using global memory with coalesced access;
+(2)~\textbf{tiled GEMM with shared memory} to exploit data locality;
+(3)~\textbf{register blocking and loop unrolling} to increase arithmetic intensity;
+(4)~\textbf{Tensor Core acceleration} (optional) via WMMA intrinsics for mixed-precision computation.
+At each stage, we profile using NVIDIA Nsight Compute to measure occupancy, bandwidth utilization, and throughput (GFLOP/s), benchmarking against cuBLAS.
+We employ \emph{roofline model} analysis \citep{williams2009roofline} to classify each variant as compute-bound or memory-bound.
+
+\paragraph{Multi-GPU Tensor Parallel forward pass.}
+We implement column-wise Tensor Parallelism for a linear layer.
+Given $Y = XW$, the weight matrix is partitioned column-wise across $p$ GPUs:
+$W = [W_1, \ldots, W_p]$, where GPU~$i$ computes $Y_i = X W_i$.
+Outputs are gathered via NCCL \texttt{AllGather}.
+We investigate communication--computation overlap using CUDA streams, the effect of partition granularity, and communication overhead as a function of GPU count.
+
+\paragraph{Backward pass and gradient aggregation.}
+Each GPU computes local gradients:
+${\partial \mathcal{L}}/{\partial W_i} = X^\top ({\partial \mathcal{L}}/{\partial Y_i})$ and
+${\partial \mathcal{L}}/{\partial X} = \sum_{i=1}^{p} ({\partial \mathcal{L}}/{\partial Y_i}) W_i^\top$,
+where the latter requires an \texttt{AllReduce} across GPUs.
+We compare synchronous versus computation-overlapped reduction, revealing how communication cost dominates as local GEMM becomes highly optimized.
+
+\vspace{-0.3em}
+\section{Evaluation plan}
+\vspace{-0.3em}
+
+All experiments will be conducted on NVIDIA A100 GPUs.
+
+\textbf{Single-GPU performance.}~~We measure throughput (GFLOP/s) across matrix sizes ($512$--$8192$) for each optimization stage, comparing against cuBLAS. Roofline analysis identifies bottleneck transitions between memory-bound and compute-bound regimes.
+
+\textbf{Strong and weak scaling.}~~For strong scaling, we fix the problem size and increase GPUs ($1, 2, 4, 8$), measuring speedup and parallel efficiency. For weak scaling, we fix per-GPU workload and evaluate linear scalability.
+
+\textbf{Compute--communication trade-off.}~~We measure the proportion of wall-clock time in NCCL communication versus GEMM computation, evaluating how kernel optimization shifts the bottleneck from compute to communication.
+
+\vspace{-0.3em}
+\section{Expected contributions}
+\vspace{-0.3em}
+
+This project delivers:
+(1)~a profiling-driven study of CUDA GEMM optimization with roofline analysis;
+(2)~a working multi-GPU Tensor Parallel linear layer (forward and backward) using NCCL;
+(3)~quantitative analysis of compute--communication trade-offs and scaling behavior;
+and (4)~insights into how kernel-level optimization interacts with distributed parallelism.
+
+{\small
+\bibliographystyle{plainnat}
+\bibliography{references}
+}
+
+\end{document}
