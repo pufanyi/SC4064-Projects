@@ -38,7 +38,7 @@ General Matrix Multiplication (GEMM) is the computational backbone of modern dee
 
 General Matrix Multiplication (GEMM) operations underpin virtually all compute-intensive workloads in deep learning \citep{jia2018dissecting}. In Transformer-based architectures \citep{vaswani2017attention}, the performance of multi-head attention and feed-forward networks is primarily dictated by the efficiency of underlying CUDA kernels. As model scales exceed the memory capacity of individual accelerators, \textbf{Tensor Parallelism} \citep{shoeybi2019megatron} has become an indispensable technique for distributed training, albeit at the cost of introducing significant inter-GPU communication overhead.
 
-While vendor-tuned libraries like cuBLAS \citep{nvidia_cublas_2026} offer near-optimal performance, they often abstract away the complex interaction between hardware-level compute intensity and system-level communication latency. For GPU programming practitioners, understanding these low-level details is crucial. This project seeks to bridge this gap by:
+While vendor-tuned libraries like cuBLAS \citep{cublas} offer near-optimal performance, they often abstract away the complex interaction between hardware-level compute intensity and system-level communication latency. For GPU programming practitioners, understanding these low-level details is crucial. This project seeks to bridge this gap by:
 (1)~systematically optimizing custom GEMM kernels to understand hardware-level constraints such as memory coalescing and bank conflicts;
 (2)~implementing a distributed Tensor Parallel linear layer (forward and backward) using NCCL;
 and (3)~quantifying how the efficiency of local CUDA kernels impacts the overall scalability and speedup of multi-GPU systems.
@@ -58,14 +58,10 @@ Performance will be characterized using the \emph{Roofline Model} \citep{william
 \paragraph{Multi-GPU Tensor Parallelism.}
 We will implement and compare two fundamental forms of Tensor Parallelism (TP) for the linear layer, reflecting state-of-the-art distributed training strategies \citep{shoeybi2019megatron}:
 \begin{itemize}
-    \item \textbf{Column Parallelism}: The weight matrix $W$ is partitioned column-wise: $W = [W_1, \dots, W_p]$. Each GPU $i$ computes a partial output $Y_i = XW_i$. This is typically used for the first linear layer in a block (e.g., $h \to 4h$).
-    \item \textbf{Row Parallelism}: The weight matrix $W$ is partitioned row-wise: $W = [W_1; \dots; W_p]^\top$. Each GPU $i$ computes $Y_i = X_i W_i$, where $X_i$ is a column slice of the input. This is used for the subsequent layer (e.g., $4h \to h$).
+    \item \textbf{Column Parallelism}: The weight matrix $W$ is partitioned column-wise: $W = [W_1, \dots, W_p]$. Each GPU $i$ computes a partial output $Y_i = XW_i$. This is typically used for the first linear layer in a block.
+    \item \textbf{Row Parallelism}: The weight matrix $W$ is partitioned row-wise: $W = [W_1; \dots; W_p]^\top$. Each GPU $i$ computes $Y_i = X_i W_i$, where $X_i$ is a column slice of the input. This is used for the subsequent layer.
 \end{itemize}
-By strategically combining these two patterns, we can implement a complete Parallel MLP block that requires only a single NCCL \texttt{AllReduce} operation at the end of the block, significantly reducing synchronization overhead. We will focus on:
-\begin{itemize}
-    \item \textbf{Forward Pass}: Implementing NCCL \texttt{AllReduce} and \texttt{AllGather} primitives, with an emphasis on overlapping communication with GEMM computation using asynchronous CUDA streams.
-    \item \textbf{Backward Pass}: Managing gradient synchronization and analyzing the overhead of aggregating $\partial \mathcal{L}/\partial X$ across multiple GPUs.
-\end{itemize}
+By strategically combining these two patterns, we can implement a complete Parallel MLP block (including both forward and backward passes) that requires minimal NCCL synchronization. We will focus on implementing these distributed primitives while investigating techniques to overlap communication with GEMM computation using asynchronous CUDA streams to hide latency.
 We will analyze how the communication-to-computation ratio evolves as our custom CUDA GEMM kernels are optimized.
 
 \vspace{-0.3em}
@@ -74,7 +70,7 @@ We will analyze how the communication-to-computation ratio evolves as our custom
 
 Experiments will be conducted on a cluster of NVIDIA A100 GPUs (via NSCC or local lab resources).
 
-\textbf{Kernel Benchmarking.}~~We will measure GFLOPS across various matrix sizes ($512$ to $16384$) to identify the transition from memory-bound to compute-bound regimes for each CUDA optimization stage.
+\textbf{Kernel Benchmarking.}~~We will measure GFLOPS across various matrix sizes to identify the transition from memory-bound to compute-bound regimes for each CUDA optimization stage.
 
 \textbf{Scaling Analysis.}~~We will evaluate \textbf{Strong Scaling} (fixed total workload, increasing GPUs) to measure parallel efficiency, and \textbf{Weak Scaling} (fixed workload per GPU) to assess the system's ability to handle larger models.
 
