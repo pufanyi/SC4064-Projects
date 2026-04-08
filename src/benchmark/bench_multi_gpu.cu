@@ -22,8 +22,8 @@
 #include <thread>
 #include <vector>
 
-#include "../kernels/gemm_dispatch.cuh"
 #include "../utils/cuda_utils.cuh"
+#include "../kernels/gemm_dispatch.cuh"
 
 #define NCCL_CHECK(cmd)                                                                            \
     do {                                                                                           \
@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
 
     CommRegistry comms(max_gpus);
     const std::vector<int> scaling_counts = build_scaling_counts(max_gpus);
-    const std::vector<int> sizes = {2048, 4096, 8192};
+    const std::vector<int> sizes = {2048, 4096, 8192, 16384, 32768};
     constexpr int kWarmup = 2;
     constexpr int kRepeat = 5;
 

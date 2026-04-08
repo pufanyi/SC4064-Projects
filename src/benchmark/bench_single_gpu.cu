@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
 
     // --- Performance benchmark ---
     printf("\n===== Performance Benchmark (GFLOPS) =====\n");
-    std::vector<int> sizes = {256, 512, 1024, 2048, 4096};
+    std::vector<int> sizes = {256, 512, 1024, 2048, 4096, 8192, 16384};
 
     cublasHandle_t handle;
     CUBLAS_CHECK(cublasCreate(&handle));
