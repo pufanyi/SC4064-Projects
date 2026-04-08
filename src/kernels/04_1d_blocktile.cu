@@ -21,15 +21,13 @@
 #include <cuda_runtime.h>
 
 // Tile dimensions
-#define BM4 64     // Block tile M
-#define BN4 64     // Block tile N
-#define BK4 8      // Tile along K per iteration
-#define TM4 8      // Thread tile M: each thread computes 8 rows
+#define BM4 64  // Block tile M
+#define BN4 64  // Block tile N
+#define BK4 8   // Tile along K per iteration
+#define TM4 8   // Thread tile M: each thread computes 8 rows
 
-__global__ void gemm_1d_blocktile(const float * __restrict__ A,
-                                   const float * __restrict__ B,
-                                   float * __restrict__ C,
-                                   int M, int N, int K) {
+__global__ void gemm_1d_blocktile(const float* __restrict__ A, const float* __restrict__ B,
+                                  float* __restrict__ C, int M, int N, int K) {
     __shared__ float As[BM4][BK4];
     __shared__ float Bs[BK4][BN4];
 
@@ -61,8 +59,7 @@ __global__ void gemm_1d_blocktile(const float * __restrict__ A,
             int load_col = tid % BK4;
             int g_row = by * BM4 + load_row;
             int g_col = t + load_col;
-            As[load_row][load_col] =
-                (g_row < M && g_col < K) ? A[g_row * K + g_col] : 0.0f;
+            As[load_row][load_col] = (g_row < M && g_col < K) ? A[g_row * K + g_col] : 0.0f;
         }
 
         // --- Cooperative load of Bs[BK4][BN4] ---
@@ -72,17 +69,16 @@ __global__ void gemm_1d_blocktile(const float * __restrict__ A,
             int load_col = tid % BN4;
             int g_row = t + load_row;
             int g_col = bx * BN4 + load_col;
-            Bs[load_row][load_col] =
-                (g_row < K && g_col < N) ? B[g_row * N + g_col] : 0.0f;
+            Bs[load_row][load_col] = (g_row < K && g_col < N) ? B[g_row * N + g_col] : 0.0f;
         }
 
         __syncthreads();
 
-        // --- Compute: each thread does TM * BK FMAs ---
-        #pragma unroll
+// --- Compute: each thread does TM * BK FMAs ---
+#pragma unroll
         for (int k = 0; k < BK4; k++) {
             float b_val = Bs[k][tx];  // Reused across TM rows
-            #pragma unroll
+#pragma unroll
             for (int m = 0; m < TM4; m++) {
                 accum[m] += As[ty * TM4 + m][k] * b_val;
             }
@@ -100,14 +96,13 @@ __global__ void gemm_1d_blocktile(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_1d_blocktile_stream(const float *A, const float *B, float *C,
-                                     int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_1d_blocktile_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                                     cudaStream_t stream) {
     dim3 block(BN4, BM4 / TM4);  // (64, 8) = 512 threads
     dim3 grid((N + BN4 - 1) / BN4, (M + BM4 - 1) / BM4);
     gemm_1d_blocktile<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_1d_blocktile(const float *A, const float *B, float *C,
-                              int M, int N, int K) {
+void launch_gemm_1d_blocktile(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_1d_blocktile_stream(A, B, C, M, N, K, 0);
 }

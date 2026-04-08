@@ -24,10 +24,8 @@
 
 #define TILE_SIZE 32
 
-__global__ void gemm_smem(const float * __restrict__ A,
-                          const float * __restrict__ B,
-                          float * __restrict__ C,
-                          int M, int N, int K) {
+__global__ void gemm_smem(const float* __restrict__ A, const float* __restrict__ B,
+                          float* __restrict__ C, int M, int N, int K) {
     // Shared memory tiles
     __shared__ float As[TILE_SIZE][TILE_SIZE];
     __shared__ float Bs[TILE_SIZE][TILE_SIZE];
@@ -44,15 +42,13 @@ __global__ void gemm_smem(const float * __restrict__ A,
         int b_row = t * TILE_SIZE + threadIdx.y;
 
         // Bounds checking for non-multiple-of-TILE_SIZE dimensions
-        As[threadIdx.y][threadIdx.x] =
-            (row < M && a_col < K) ? A[row * K + a_col] : 0.0f;
-        Bs[threadIdx.y][threadIdx.x] =
-            (b_row < K && col < N) ? B[b_row * N + col] : 0.0f;
+        As[threadIdx.y][threadIdx.x] = (row < M && a_col < K) ? A[row * K + a_col] : 0.0f;
+        Bs[threadIdx.y][threadIdx.x] = (b_row < K && col < N) ? B[b_row * N + col] : 0.0f;
 
         __syncthreads();
 
-        // Compute partial dot product from this tile
-        #pragma unroll
+// Compute partial dot product from this tile
+#pragma unroll
         for (int k = 0; k < TILE_SIZE; k++) {
             sum += As[threadIdx.y][k] * Bs[k][threadIdx.x];
         }
@@ -65,15 +61,13 @@ __global__ void gemm_smem(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_smem_stream(const float *A, const float *B, float *C,
-                             int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_smem_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                             cudaStream_t stream) {
     dim3 block(TILE_SIZE, TILE_SIZE);
-    dim3 grid((N + TILE_SIZE - 1) / TILE_SIZE,
-              (M + TILE_SIZE - 1) / TILE_SIZE);
+    dim3 grid((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
     gemm_smem<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_smem(const float *A, const float *B, float *C,
-                      int M, int N, int K) {
+void launch_gemm_smem(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_smem_stream(A, B, C, M, N, K, 0);
 }

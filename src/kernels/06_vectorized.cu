@@ -21,12 +21,10 @@
 #define TM6 8
 #define TN6 8
 
-__global__ void gemm_vectorized(const float * __restrict__ A,
-                                 const float * __restrict__ B,
-                                 float * __restrict__ C,
-                                 int M, int N, int K) {
+__global__ void gemm_vectorized(const float* __restrict__ A, const float* __restrict__ B,
+                                float* __restrict__ C, int M, int N, int K) {
     // Transpose A in shared memory to avoid bank conflicts
-    __shared__ float As[BK6][BM6];   // Transposed: [k][m]
+    __shared__ float As[BK6][BM6];  // Transposed: [k][m]
     __shared__ float Bs[BK6][BN6];
 
     const int threads_per_block = (BM6 / TM6) * (BN6 / TN6);  // 256
@@ -43,8 +41,8 @@ __global__ void gemm_vectorized(const float * __restrict__ A,
 
     // Precompute load positions for A and B using float4
     // A tile: BM6 * BK6 = 1024 floats = 256 float4s → 1 float4 per thread
-    const int a_load_row = tid / (BK6 / 4);   // row in A tile
-    const int a_load_col = tid % (BK6 / 4);   // float4 column
+    const int a_load_row = tid / (BK6 / 4);  // row in A tile
+    const int a_load_col = tid % (BK6 / 4);  // float4 column
     // B tile: BK6 * BN6 = 1024 floats = 256 float4s → 1 float4 per thread
     const int b_load_row = tid / (BN6 / 4);
     const int b_load_col = tid % (BN6 / 4);
@@ -93,20 +91,20 @@ __global__ void gemm_vectorized(const float * __restrict__ A,
 
         __syncthreads();
 
-        // --- Compute (same as kernel 5, but A is transposed in smem) ---
-        #pragma unroll
+// --- Compute (same as kernel 5, but A is transposed in smem) ---
+#pragma unroll
         for (int k = 0; k < BK6; k++) {
-            #pragma unroll
+#pragma unroll
             for (int m = 0; m < TM6; m++) {
                 a_cache[m] = As[k][thread_row * TM6 + m];  // Transposed access
             }
-            #pragma unroll
+#pragma unroll
             for (int n = 0; n < TN6; n++) {
                 b_cache[n] = Bs[k][thread_col * TN6 + n];
             }
-            #pragma unroll
+#pragma unroll
             for (int m = 0; m < TM6; m++) {
-                #pragma unroll
+#pragma unroll
                 for (int n = 0; n < TN6; n++) {
                     accum[m][n] += a_cache[m] * b_cache[n];
                 }
@@ -116,13 +114,13 @@ __global__ void gemm_vectorized(const float * __restrict__ A,
         __syncthreads();
     }
 
-    // --- Vectorized write of results using float4 ---
-    #pragma unroll
+// --- Vectorized write of results using float4 ---
+#pragma unroll
     for (int m = 0; m < TM6; m++) {
         int gr = block_row + thread_row * TM6 + m;
         if (gr < M) {
-            // Write TN6=8 elements as 2 float4s
-            #pragma unroll
+// Write TN6=8 elements as 2 float4s
+#pragma unroll
             for (int n = 0; n < TN6; n += 4) {
                 int gc = block_col + thread_col * TN6 + n;
                 if (gc + 3 < N) {
@@ -143,15 +141,14 @@ __global__ void gemm_vectorized(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_vectorized_stream(const float *A, const float *B, float *C,
-                                   int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_vectorized_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                                   cudaStream_t stream) {
     const int threads = (BM6 / TM6) * (BN6 / TN6);
     dim3 block(threads);
     dim3 grid((N + BN6 - 1) / BN6, (M + BM6 - 1) / BM6);
     gemm_vectorized<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_vectorized(const float *A, const float *B, float *C,
-                            int M, int N, int K) {
+void launch_gemm_vectorized(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_vectorized_stream(A, B, C, M, N, K, 0);
 }

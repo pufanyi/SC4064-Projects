@@ -19,10 +19,8 @@
 #include <cuda_runtime.h>
 
 // BAD: threadIdx.x maps to row → uncoalesced writes to C
-__global__ void gemm_uncoalesced(const float * __restrict__ A,
-                                  const float * __restrict__ B,
-                                  float * __restrict__ C,
-                                  int M, int N, int K) {
+__global__ void gemm_uncoalesced(const float* __restrict__ A, const float* __restrict__ B,
+                                 float* __restrict__ C, int M, int N, int K) {
     // Deliberately swapped: x → row, y → col
     int row = blockIdx.x * blockDim.x + threadIdx.x;
     int col = blockIdx.y * blockDim.y + threadIdx.y;
@@ -38,10 +36,8 @@ __global__ void gemm_uncoalesced(const float * __restrict__ A,
 }
 
 // GOOD: threadIdx.x maps to col → coalesced writes to C and reads from B
-__global__ void gemm_coalesced(const float * __restrict__ A,
-                                const float * __restrict__ B,
-                                float * __restrict__ C,
-                                int M, int N, int K) {
+__global__ void gemm_coalesced(const float* __restrict__ A, const float* __restrict__ B,
+                               float* __restrict__ C, int M, int N, int K) {
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int row = blockIdx.y * blockDim.y + threadIdx.y;
 
@@ -56,22 +52,20 @@ __global__ void gemm_coalesced(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_coalesced_stream(const float *A, const float *B, float *C,
-                                  int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_coalesced_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                                  cudaStream_t stream) {
     const int BLOCK = 32;
     dim3 block(BLOCK, BLOCK);
     dim3 grid((N + BLOCK - 1) / BLOCK, (M + BLOCK - 1) / BLOCK);
     gemm_coalesced<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_coalesced(const float *A, const float *B, float *C,
-                           int M, int N, int K) {
+void launch_gemm_coalesced(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_coalesced_stream(A, B, C, M, N, K, 0);
 }
 
 // Exported for comparison benchmarking
-void launch_gemm_uncoalesced(const float *A, const float *B, float *C,
-                             int M, int N, int K) {
+void launch_gemm_uncoalesced(const float* A, const float* B, float* C, int M, int N, int K) {
     const int BLOCK = 32;
     dim3 block(BLOCK, BLOCK);
     dim3 grid((M + BLOCK - 1) / BLOCK, (N + BLOCK - 1) / BLOCK);

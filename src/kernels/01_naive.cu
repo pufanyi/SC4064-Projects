@@ -19,10 +19,8 @@
 
 #include <cuda_runtime.h>
 
-__global__ void gemm_naive(const float * __restrict__ A,
-                           const float * __restrict__ B,
-                           float * __restrict__ C,
-                           int M, int N, int K) {
+__global__ void gemm_naive(const float* __restrict__ A, const float* __restrict__ B,
+                           float* __restrict__ C, int M, int N, int K) {
     // Map thread to output element
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -36,15 +34,14 @@ __global__ void gemm_naive(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_naive_stream(const float *A, const float *B, float *C,
-                              int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_naive_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                              cudaStream_t stream) {
     const int BLOCK = 32;
     dim3 block(BLOCK, BLOCK);
     dim3 grid((N + BLOCK - 1) / BLOCK, (M + BLOCK - 1) / BLOCK);
     gemm_naive<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_naive(const float *A, const float *B, float *C,
-                       int M, int N, int K) {
+void launch_gemm_naive(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_naive_stream(A, B, C, M, N, K, 0);
 }

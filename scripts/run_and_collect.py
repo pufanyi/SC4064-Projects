@@ -23,6 +23,7 @@ def run(cmd, **kw):
 
 # ── single-GPU ────────────────────────────────────────────────────────────
 
+
 def parse_single_gpu(text):
     result = {"correctness": {}, "performance": {}}
 
@@ -35,24 +36,33 @@ def parse_single_gpu(text):
     if len(perf_block) < 2:
         return result
     block = perf_block[1]
-    lines = [l for l in block.strip().splitlines() if l.strip()]
+    lines = [line for line in block.strip().splitlines() if line.strip()]
     # First non-dash line is header
     header_line = None
     data_lines = []
-    for l in lines:
-        if set(l.strip()) == {"-"}:
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or set(stripped).issubset({"-", " ", "="}):
             continue
         if header_line is None:
-            header_line = l
+            header_line = line
         else:
-            data_lines.append(l)
+            data_lines.append(line)
 
     if header_line is None:
         return result
 
-    # Parse sizes from header
+    # Parse sizes from header — skip any tokens that aren't numbers
     parts = header_line.split()
-    sizes = [int(x) for x in parts[1:]]  # skip "Kernel"
+    sizes = []
+    for p in parts:
+        try:
+            sizes.append(int(p))
+        except ValueError:
+            pass
+
+    if not sizes:
+        return result
 
     for line in data_lines:
         if line.strip().startswith("Done"):
@@ -61,15 +71,19 @@ def parse_single_gpu(text):
         if len(parts) < 2:
             continue
         kernel = parts[0]
-        gflops = [float(x) for x in parts[1:]]
-        result["performance"][kernel] = {
-            str(s): g for s, g in zip(sizes, gflops)
-        }
+        try:
+            gflops = [float(x) for x in parts[1:]]
+        except ValueError:
+            continue
+        if len(gflops) != len(sizes):
+            continue
+        result["performance"][kernel] = {str(s): g for s, g in zip(sizes, gflops)}
 
     return result
 
 
 # ── multi-GPU ─────────────────────────────────────────────────────────────
+
 
 def parse_multi_gpu(text):
     result = {}
@@ -85,17 +99,18 @@ def parse_multi_gpu(text):
         exp_title = m.group(2).strip()
         body = m.group(3).strip()
 
-        lines = [l for l in body.splitlines() if l.strip()]
-        # Find header line (first non-dash line)
+        lines = [line for line in body.splitlines() if line.strip()]
+        # Find header line (first non-separator line)
         header = None
         data = []
-        for l in lines:
-            if set(l.strip()).issubset({"-", " "}):
+        for line in lines:
+            stripped = line.strip()
+            if not stripped or set(stripped).issubset({"-", " ", "="}):
                 continue
             if header is None:
-                header = l
+                header = line
             else:
-                data.append(l)
+                data.append(line)
 
         if not header or not data:
             continue
@@ -108,7 +123,7 @@ def parse_multi_gpu(text):
                 continue
             row = {}
             for c, v in zip(cols, vals):
-                c = c.rstrip("(ms)").rstrip("(")  # clean column names
+                c = re.sub(r"\(.*?\)$", "", c)  # clean column names
                 try:
                     # try int first, then float
                     if "." in v or "x" in v:
@@ -126,8 +141,31 @@ def parse_multi_gpu(text):
 
 # ── main ──────────────────────────────────────────────────────────────────
 
+
 def main():
     max_gpus = 8
+    outpath = ROOT / "results" / "benchmark_results.json"
+
+    # --reparse: re-parse from existing JSON raw fields without re-running
+    if len(sys.argv) > 1 and sys.argv[1] == "--reparse":
+        with open(outpath) as f:
+            out = json.load(f)
+        out["single_gpu"] = {
+            **parse_single_gpu(out["single_gpu"]["raw"]),
+            "raw": out["single_gpu"]["raw"],
+            "elapsed_s": out["single_gpu"]["elapsed_s"],
+        }
+        out["multi_gpu"] = {
+            **parse_multi_gpu(out["multi_gpu"]["raw"]),
+            "raw": out["multi_gpu"]["raw"],
+            "elapsed_s": out["multi_gpu"]["elapsed_s"],
+            "max_gpus": out["multi_gpu"]["max_gpus"],
+            "kernel": out["multi_gpu"]["kernel"],
+        }
+        with open(outpath, "w") as f:
+            json.dump(out, f, indent=2, ensure_ascii=False)
+        print(f"Re-parsed and written to {outpath}")
+        return
 
     out = {}
 
@@ -139,7 +177,7 @@ def main():
     out["single_gpu"] = parse_single_gpu(raw_single)
     out["single_gpu"]["raw"] = raw_single
     out["single_gpu"]["elapsed_s"] = round(t1 - t0, 2)
-    print(f"    done in {t1-t0:.1f}s", flush=True)
+    print(f"    done in {t1 - t0:.1f}s", flush=True)
 
     # Multi-GPU (cuBLAS kernel = 7, which is the default)
     print(f"=== Running multi-GPU benchmark ({max_gpus} GPUs) ===", flush=True)
@@ -151,18 +189,18 @@ def main():
     out["multi_gpu"]["elapsed_s"] = round(t1 - t0, 2)
     out["multi_gpu"]["max_gpus"] = max_gpus
     out["multi_gpu"]["kernel"] = "cuBLAS"
-    print(f"    done in {t1-t0:.1f}s", flush=True)
+    print(f"    done in {t1 - t0:.1f}s", flush=True)
 
     # Metadata
-    nvsmi = run(["nvidia-smi", "--query-gpu=name,compute_cap,memory.total",
-                  "--format=csv,noheader"])
+    nvsmi = run(
+        ["nvidia-smi", "--query-gpu=name,compute_cap,memory.total", "--format=csv,noheader"]
+    )
     out["metadata"] = {
         "gpu": nvsmi.strip().splitlines()[0].strip(),
         "num_gpus": max_gpus,
         "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
     }
 
-    outpath = ROOT / "results" / "benchmark_results.json"
     outpath.parent.mkdir(exist_ok=True)
     with open(outpath, "w") as f:
         json.dump(out, f, indent=2, ensure_ascii=False)

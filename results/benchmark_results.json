@@ -1,0 +1,397 @@
+{
+  "single_gpu": {
+    "correctness": {
+      "1_naive": "PASS",
+      "2_coalesced": "PASS",
+      "2_uncoalesced": "PASS",
+      "3_smem": "PASS",
+      "4_1d_blocktile": "PASS",
+      "5_2d_blocktile": "PASS",
+      "6_vectorized": "PASS",
+      "7_warptile": "PASS",
+      "cuBLAS": "PASS"
+    },
+    "performance": {
+      "1_naive": {
+        "256": 2295.0,
+        "512": 5588.0,
+        "1024": 6050.0,
+        "2048": 6195.0,
+        "4096": 6326.0
+      },
+      "2_coalesced": {
+        "256": 2296.0,
+        "512": 5548.0,
+        "1024": 6043.0,
+        "2048": 6223.0,
+        "4096": 6326.0
+      },
+      "2_uncoalesced": {
+        "256": 236.0,
+        "512": 482.0,
+        "1024": 486.0,
+        "2048": 487.0,
+        "4096": 498.0
+      },
+      "3_smem": {
+        "256": 3071.0,
+        "512": 8011.0,
+        "1024": 9037.0,
+        "2048": 9228.0,
+        "4096": 9044.0
+      },
+      "4_1d_blocktile": {
+        "256": 1477.0,
+        "512": 6241.0,
+        "1024": 17589.0,
+        "2048": 17528.0,
+        "4096": 17034.0
+      },
+      "5_2d_blocktile": {
+        "256": 642.0,
+        "512": 2724.0,
+        "1024": 12125.0,
+        "2048": 21389.0,
+        "4096": 22044.0
+      },
+      "6_vectorized": {
+        "256": 681.0,
+        "512": 2845.0,
+        "1024": 11653.0,
+        "2048": 32333.0,
+        "4096": 32612.0
+      },
+      "7_warptile": {
+        "256": 670.0,
+        "512": 2854.0,
+        "1024": 12776.0,
+        "2048": 29824.0,
+        "4096": 31265.0
+      },
+      "cuBLAS": {
+        "256": 2564.0,
+        "512": 17120.0,
+        "1024": 37366.0,
+        "2048": 50260.0,
+        "4096": 51712.0
+      }
+    },
+    "raw": "=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Correctness Verification (M=N=K=256) =====\n1_naive             :   PASS (max_diff=0.000007)\n2_coalesced         :   PASS (max_diff=0.000007)\n2_uncoalesced       :   PASS (max_diff=0.000007)\n3_smem              :   PASS (max_diff=0.000007)\n4_1d_blocktile      :   PASS (max_diff=0.000007)\n5_2d_blocktile      :   PASS (max_diff=0.000007)\n6_vectorized        :   PASS (max_diff=0.000007)\n7_warptile          :   PASS (max_diff=0.000007)\ncuBLAS              :   PASS (max_diff=0.000013)\n\n===== Performance Benchmark (GFLOPS) =====\nKernel                  256    512   1024   2048   4096\n-------------------------------------------------------\n1_naive                2295   5588   6050   6195   6326\n2_coalesced            2296   5548   6043   6223   6326\n2_uncoalesced           236    482    486    487    498\n3_smem                 3071   8011   9037   9228   9044\n4_1d_blocktile         1477   6241  17589  17528  17034\n5_2d_blocktile          642   2724  12125  21389  22044\n6_vectorized            681   2845  11653  32333  32612\n7_warptile              670   2854  12776  29824  31265\ncuBLAS                 2564  17120  37366  50260  51712\n\nDone.\n",
+    "elapsed_s": 11.18
+  },
+  "multi_gpu": {
+    "exp1": {
+      "title": "Strong Scaling — Column Parallel Forward",
+      "data": [
+        {
+          "M": 2048,
+          "N": 2048,
+          "K": 2048,
+          "GPUs": 1,
+          "GEMM": 0.455,
+          "Comm": 0.0,
+          "Total": 0.434,
+          "GFLOPS": 39550.8
+        },
+        {
+          "M": 4096,
+          "N": 4096,
+          "K": 4096,
+          "GPUs": 1,
+          "GEMM": 2.735,
+          "Comm": 0.0,
+          "Total": 2.786,
+          "GFLOPS": 49330.2
+        },
+        {
+          "M": 8192,
+          "N": 8192,
+          "K": 8192,
+          "GPUs": 1,
+          "GEMM": 21.424,
+          "Comm": 0.0,
+          "Total": 21.526,
+          "GFLOPS": 51077.6
+        },
+        {
+          "M": 2048,
+          "N": 2048,
+          "K": 2048,
+          "GPUs": 2,
+          "GEMM": 0.313,
+          "Comm": 0.219,
+          "Total": 0.361,
+          "GFLOPS": 47532.9
+        },
+        {
+          "M": 4096,
+          "N": 4096,
+          "K": 4096,
+          "GPUs": 2,
+          "GEMM": 1.481,
+          "Comm": 0.289,
+          "Total": 1.585,
+          "GFLOPS": 86711.9
+        },
+        {
+          "M": 8192,
+          "N": 8192,
+          "K": 8192,
+          "GPUs": 2,
+          "GEMM": 10.879,
+          "Comm": 0.657,
+          "Total": 11.429,
+          "GFLOPS": 96203.2
+        },
+        {
+          "M": 2048,
+          "N": 2048,
+          "K": 2048,
+          "GPUs": 4,
+          "GEMM": 0.27,
+          "Comm": 0.22,
+          "Total": 0.308,
+          "GFLOPS": 55742.2
+        },
+        {
+          "M": 4096,
+          "N": 4096,
+          "K": 4096,
+          "GPUs": 4,
+          "GEMM": 0.866,
+          "Comm": 0.346,
+          "Total": 1.017,
+          "GFLOPS": 135105.9
+        },
+        {
+          "M": 8192,
+          "N": 8192,
+          "K": 8192,
+          "GPUs": 4,
+          "GEMM": 5.511,
+          "Comm": 0.806,
+          "Total": 7.513,
+          "GFLOPS": 146356.9
+        },
+        {
+          "M": 2048,
+          "N": 2048,
+          "K": 2048,
+          "GPUs": 8,
+          "GEMM": 0.499,
+          "Comm": 0.471,
+          "Total": 0.539,
+          "GFLOPS": 31862.8
+        },
+        {
+          "M": 4096,
+          "N": 4096,
+          "K": 4096,
+          "GPUs": 8,
+          "GEMM": 0.796,
+          "Comm": 0.607,
+          "Total": 0.981,
+          "GFLOPS": 140068.6
+        },
+        {
+          "M": 8192,
+          "N": 8192,
+          "K": 8192,
+          "GPUs": 8,
+          "GEMM": 3.075,
+          "Comm": 1.148,
+          "Total": 3.786,
+          "GFLOPS": 290408.2
+        }
+      ]
+    },
+    "exp2": {
+      "title": "Weak Scaling — Fixed M=N_local=K=2048 per GPU",
+      "data": [
+        {
+          "M": 2048,
+          "N_tot": 2048,
+          "K": 2048,
+          "GPUs": 1,
+          "GEMM": 0.428,
+          "Comm": 0.0,
+          "Total": 0.435,
+          "GFLOPS": 39456.8
+        },
+        {
+          "M": 2048,
+          "N_tot": 4096,
+          "K": 2048,
+          "GPUs": 2,
+          "GEMM": 0.456,
+          "Comm": 0.201,
+          "Total": 0.54,
+          "GFLOPS": 63631.6
+        },
+        {
+          "M": 2048,
+          "N_tot": 8192,
+          "K": 2048,
+          "GPUs": 4,
+          "GEMM": 0.51,
+          "Comm": 0.341,
+          "Total": 0.675,
+          "GFLOPS": 101874.1
+        },
+        {
+          "M": 2048,
+          "N_tot": 16384,
+          "K": 2048,
+          "GPUs": 8,
+          "GEMM": 0.761,
+          "Comm": 0.771,
+          "Total": 1.125,
+          "GFLOPS": 122174.1
+        }
+      ]
+    },
+    "exp3": {
+      "title": "Comm/Compute Ratio vs Matrix Size (8 GPUs)",
+      "data": [
+        {
+          "Size": 2048,
+          "GEMM": 0.495,
+          "Comm": 0.462,
+          "Ratio": 0.93
+        },
+        {
+          "Size": 4096,
+          "GEMM": 0.775,
+          "Comm": 0.598,
+          "Ratio": 0.77
+        },
+        {
+          "Size": 8192,
+          "GEMM": 3.074,
+          "Comm": 1.116,
+          "Ratio": 0.36
+        }
+      ]
+    },
+    "exp4": {
+      "title": "Comm/Compute Ratio across Kernels (size=4096, 8 GPUs)",
+      "data": [
+        {
+          "Kernel": "1_naive",
+          "GEMM": 3.148,
+          "Comm": 0.634,
+          "Ratio": 0.2
+        },
+        {
+          "Kernel": "2_coalesced",
+          "GEMM": 3.141,
+          "Comm": 0.634,
+          "Ratio": 0.2
+        },
+        {
+          "Kernel": "3_smem",
+          "GEMM": 2.256,
+          "Comm": 0.634,
+          "Ratio": 0.28
+        },
+        {
+          "Kernel": "4_1d_blocktile",
+          "GEMM": 1.319,
+          "Comm": 0.634,
+          "Ratio": 0.48
+        },
+        {
+          "Kernel": "5_2d_blocktile",
+          "GEMM": 1.147,
+          "Comm": 0.634,
+          "Ratio": 0.55
+        },
+        {
+          "Kernel": "6_vectorized",
+          "GEMM": 1.229,
+          "Comm": 0.634,
+          "Ratio": 0.52
+        },
+        {
+          "Kernel": "7_warptile",
+          "GEMM": 1.081,
+          "Comm": 0.634,
+          "Ratio": 0.59
+        },
+        {
+          "Kernel": "cuBLAS",
+          "GEMM": 0.733,
+          "Comm": 0.634,
+          "Ratio": 0.86
+        }
+      ]
+    },
+    "exp5": {
+      "title": "Parallel MLP Forward + Backward (8 GPUs)",
+      "data": [
+        {
+          "M": 2048,
+          "H": 2048,
+          "N": 2048,
+          "GPUs": 8,
+          "Fwd": 0.711,
+          "Bwd": 0.773,
+          "Total": 1.485
+        },
+        {
+          "M": 4096,
+          "H": 4096,
+          "N": 4096,
+          "GPUs": 8,
+          "Fwd": 1.517,
+          "Bwd": 2.169,
+          "Total": 3.686
+        },
+        {
+          "M": 8192,
+          "H": 8192,
+          "N": 8192,
+          "GPUs": 8,
+          "Fwd": 6.929,
+          "Bwd": 12.207,
+          "Total": 19.136
+        }
+      ]
+    },
+    "exp6": {
+      "title": "Row Parallel — No Overlap vs Overlap (8 GPUs)",
+      "data": [
+        {
+          "Size": 2048,
+          "Chunks": 4,
+          "NoOvlp": 0.611,
+          "Overlap": 0.675,
+          "Speedup": 0.91
+        },
+        {
+          "Size": 4096,
+          "Chunks": 4,
+          "NoOvlp": 1.133,
+          "Overlap": 1.193,
+          "Speedup": 0.95
+        },
+        {
+          "Size": 8192,
+          "Chunks": 4,
+          "NoOvlp": 4.256,
+          "Overlap": 4.152,
+          "Speedup": 1.02
+        }
+      ]
+    },
+    "raw": "===== Multi-GPU Tensor Parallel Benchmark =====\nMax GPUs used:      8\nLocal GEMM kernel:  cuBLAS\n\n=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 1: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 2: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 3: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 4: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 5: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 6: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 7: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Exp 1: Strong Scaling — Column Parallel Forward =====\nM      N      K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.455       0.000       0.434   39550.8\n4096   4096   4096   1            2.735       0.000       2.786   49330.2\n8192   8192   8192   1           21.424       0.000      21.526   51077.6\n2048   2048   2048   2            0.313       0.219       0.361   47532.9\n4096   4096   4096   2            1.481       0.289       1.585   86711.9\n8192   8192   8192   2           10.879       0.657      11.429   96203.2\n2048   2048   2048   4            0.270       0.220       0.308   55742.2\n4096   4096   4096   4            0.866       0.346       1.017  135105.9\n8192   8192   8192   4            5.511       0.806       7.513  146356.9\n2048   2048   2048   8            0.499       0.471       0.539   31862.8\n4096   4096   4096   8            0.796       0.607       0.981  140068.6\n8192   8192   8192   8            3.075       1.148       3.786  290408.2\n\n===== Exp 2: Weak Scaling — Fixed M=N_local=K=2048 per GPU =====\nM      N_tot  K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.428       0.000       0.435   39456.8\n2048   4096   2048   2            0.456       0.201       0.540   63631.6\n2048   8192   2048   4            0.510       0.341       0.675  101874.1\n2048   16384  2048   8            0.761       0.771       1.125  122174.1\n\n===== Exp 3: Comm/Compute Ratio vs Matrix Size (8 GPUs) =====\nSize      GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n2048         0.495       0.462      0.93\n4096         0.775       0.598      0.77\n8192         3.074       1.116      0.36\n\n===== Exp 4: Comm/Compute Ratio across Kernels (size=4096, 8 GPUs) =====\nKernel                  GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n1_naive                    3.148       0.634      0.20\n2_coalesced                3.141       0.634      0.20\n3_smem                     2.256       0.634      0.28\n4_1d_blocktile             1.319       0.634      0.48\n5_2d_blocktile             1.147       0.634      0.55\n6_vectorized               1.229       0.634      0.52\n7_warptile                 1.081       0.634      0.59\ncuBLAS                     0.733       0.634      0.86\n\n===== Exp 5: Parallel MLP Forward + Backward (8 GPUs) =====\nM      H      N      GPUs       Fwd(ms)     Bwd(ms)   Total(ms)\n-----------------------------------------------------------\n2048   2048   2048   8            0.711       0.773       1.485\n4096   4096   4096   8            1.517       2.169       3.686\n8192   8192   8192   8            6.929      12.207      19.136\n\n===== Exp 6: Row Parallel — No Overlap vs Overlap (8 GPUs) =====\nSize    Chunks    NoOvlp(ms)  Overlap(ms)   Speedup\n------------------------------------------------------\n2048    4              0.611       0.675      0.91x\n4096    4              1.133       1.193      0.95x\n8192    4              4.256       4.152      1.02x\n\nDone.\n",
+    "elapsed_s": 105.78,
+    "max_gpus": 8,
+    "kernel": "cuBLAS"
+  },
+  "metadata": {
+    "gpu": "NVIDIA H100 80GB HBM3, 9.0, 81559 MiB",
+    "num_gpus": 8,
+    "timestamp": "2026-04-08T18:27:57"
+  }
+}

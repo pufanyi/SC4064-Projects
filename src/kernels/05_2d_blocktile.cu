@@ -27,10 +27,8 @@
 #define TM5 8
 #define TN5 8
 
-__global__ void gemm_2d_blocktile(const float * __restrict__ A,
-                                   const float * __restrict__ B,
-                                   float * __restrict__ C,
-                                   int M, int N, int K) {
+__global__ void gemm_2d_blocktile(const float* __restrict__ A, const float* __restrict__ B,
+                                  float* __restrict__ C, int M, int N, int K) {
     __shared__ float As[BM5][BK5];
     __shared__ float Bs[BK5][BN5];
 
@@ -61,8 +59,8 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
     const int b_loads = (BK5 * BN5) / num_threads;  // 4
 
     for (int t = 0; t < K; t += BK5) {
-        // --- Load A tile ---
-        #pragma unroll
+// --- Load A tile ---
+#pragma unroll
         for (int i = 0; i < a_loads; i++) {
             int idx = tid + i * num_threads;
             int lr = idx / BK5;
@@ -72,8 +70,8 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
             As[lr][lc] = (gr < M && gc < K) ? A[gr * K + gc] : 0.0f;
         }
 
-        // --- Load B tile ---
-        #pragma unroll
+// --- Load B tile ---
+#pragma unroll
         for (int i = 0; i < b_loads; i++) {
             int idx = tid + i * num_threads;
             int lr = idx / BN5;
@@ -85,23 +83,23 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
 
         __syncthreads();
 
-        // --- Compute TM×TN outer product for each k ---
-        #pragma unroll
+// --- Compute TM×TN outer product for each k ---
+#pragma unroll
         for (int k = 0; k < BK5; k++) {
-            // Load column of A tile into registers
-            #pragma unroll
+// Load column of A tile into registers
+#pragma unroll
             for (int m = 0; m < TM5; m++) {
                 a_cache[m] = As[thread_row * TM5 + m][k];
             }
-            // Load row of B tile into registers
-            #pragma unroll
+// Load row of B tile into registers
+#pragma unroll
             for (int n = 0; n < TN5; n++) {
                 b_cache[n] = Bs[k][thread_col * TN5 + n];
             }
-            // Outer product
-            #pragma unroll
+// Outer product
+#pragma unroll
             for (int m = 0; m < TM5; m++) {
-                #pragma unroll
+#pragma unroll
                 for (int n = 0; n < TN5; n++) {
                     accum[m][n] += a_cache[m] * b_cache[n];
                 }
@@ -111,11 +109,11 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
         __syncthreads();
     }
 
-    // --- Write results ---
-    #pragma unroll
+// --- Write results ---
+#pragma unroll
     for (int m = 0; m < TM5; m++) {
         int gr = block_row + thread_row * TM5 + m;
-        #pragma unroll
+#pragma unroll
         for (int n = 0; n < TN5; n++) {
             int gc = block_col + thread_col * TN5 + n;
             if (gr < M && gc < N) {
@@ -125,15 +123,14 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_2d_blocktile_stream(const float *A, const float *B, float *C,
-                                     int M, int N, int K, cudaStream_t stream) {
+void launch_gemm_2d_blocktile_stream(const float* A, const float* B, float* C, int M, int N, int K,
+                                     cudaStream_t stream) {
     const int threads = (BM5 / TM5) * (BN5 / TN5);  // 256
     dim3 block(threads);
     dim3 grid((N + BN5 - 1) / BN5, (M + BM5 - 1) / BM5);
     gemm_2d_blocktile<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
 }
 
-void launch_gemm_2d_blocktile(const float *A, const float *B, float *C,
-                              int M, int N, int K) {
+void launch_gemm_2d_blocktile(const float* A, const float* B, float* C, int M, int N, int K) {
     launch_gemm_2d_blocktile_stream(A, B, C, M, N, K, 0);
 }
