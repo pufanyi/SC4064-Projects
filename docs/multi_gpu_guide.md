@@ -1,13 +1,13 @@
 # Multi-GPU Testing & Debugging Guide
 
-This guide covers how to build, run, and debug the multi-GPU tensor parallel benchmark on a machine with 2+ GPUs and NCCL installed.
+This guide covers how to build, run, and debug the multi-GPU tensor parallel benchmark on a machine with 2+ GPUs.
 
 ## Prerequisites
 
 1. **2+ NVIDIA GPUs** (ideally same model, e.g., 2x A100 or 2x H100)
-2. **NCCL library** installed (header `nccl.h` and `libnccl.so`)
-3. **CUDA toolkit** 11.0+ (tested with 13.1)
-4. **cuBLAS** (comes with CUDA toolkit)
+2. **CUDA toolkit** 11.0+ (tested with 13.1)
+3. **cuBLAS** (comes with CUDA toolkit)
+4. **NCCL** (`nccl.h` and `libnccl.so`)
 
 ### Installing NCCL
 
@@ -42,11 +42,9 @@ GPU_ARCH=sm_80 make all
 GPU_ARCH=sm_80 make bench_multi
 ```
 
-If you hit linker errors for NCCL:
+If NCCL is installed in a non-default location, point the build at it:
 ```bash
-# Check NCCL_HOME points to the right place
-NCCL_HOME=/usr make bench_multi
-# Common locations: /usr, /usr/local, /opt/nccl
+NCCL_HOME=/path/to/nccl make bench_multi
 ```
 
 ## Running the Multi-GPU Benchmark

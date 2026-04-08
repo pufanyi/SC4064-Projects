@@ -107,7 +107,7 @@ Column-parallel (layer 1) → Row-parallel (layer 2) = only **one AllReduce** pe
 ## Building & Running
 
 ### Prerequisites
-- CUDA Toolkit ≥ 11.0, cuBLAS, NCCL ≥ 2.10, Python 3 + matplotlib
+- CUDA Toolkit ≥ 11.0, cuBLAS, NCCL, Python 3 + matplotlib
 
 ### Build
 ```bash
