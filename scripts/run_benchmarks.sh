@@ -37,7 +37,7 @@ echo ""
 echo "=========================================="
 echo " Generating Plots"
 echo "=========================================="
-python3 scripts/plot_results.py $RESULTS_DIR/single_gpu.txt
+python3 scripts/plot_results.py $RESULTS_DIR/single_gpu.txt $RESULTS_DIR/multi_gpu.txt
 
 echo ""
 echo "All results saved to $RESULTS_DIR/"

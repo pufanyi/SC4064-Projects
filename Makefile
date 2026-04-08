@@ -23,12 +23,12 @@ NVCCFLAGS  := -std=c++17 -O3 -arch=$(GPU_ARCH) \
               -Xcompiler -Wall
 
 # Include paths
-INCLUDES   := -I$(CUDA_HOME)/include -I$(NCCL_HOME)/include -Isrc
+INCLUDES   := -Isrc -I$(CUDA_HOME)/include -I$(NCCL_HOME)/include
 
 # Libraries
 LDFLAGS    := -L$(CUDA_HOME)/lib64 -L$(NCCL_HOME)/lib
 LIBS_SINGLE := -lcublas
-LIBS_MULTI  := -lcublas -lnccl
+LIBS_MULTI  := -lcublas
 
 # Source files
 KERNEL_SRCS := src/kernels/01_naive.cu \
@@ -62,8 +62,9 @@ bench_single: $(BUILD_DIR)
 bench_multi: $(BUILD_DIR)
 	$(NVCC) $(NVCCFLAGS) $(INCLUDES) \
 		src/benchmark/bench_multi_gpu.cu \
+		src/tensor_parallel/nccl_compat.cu \
 		src/tensor_parallel/tensor_parallel.cu \
-		src/kernels/cublas_ref.cu \
+		$(KERNEL_SRCS) \
 		$(LDFLAGS) $(LIBS_MULTI) \
 		-o $(BUILD_DIR)/bench_multi_gpu
 

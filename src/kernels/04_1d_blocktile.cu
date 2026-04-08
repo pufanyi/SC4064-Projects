@@ -100,9 +100,14 @@ __global__ void gemm_1d_blocktile(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_1d_blocktile(const float *A, const float *B, float *C,
-                              int M, int N, int K) {
+void launch_gemm_1d_blocktile_stream(const float *A, const float *B, float *C,
+                                     int M, int N, int K, cudaStream_t stream) {
     dim3 block(BN4, BM4 / TM4);  // (64, 8) = 512 threads
     dim3 grid((N + BN4 - 1) / BN4, (M + BM4 - 1) / BM4);
-    gemm_1d_blocktile<<<grid, block>>>(A, B, C, M, N, K);
+    gemm_1d_blocktile<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+}
+
+void launch_gemm_1d_blocktile(const float *A, const float *B, float *C,
+                              int M, int N, int K) {
+    launch_gemm_1d_blocktile_stream(A, B, C, M, N, K, 0);
 }

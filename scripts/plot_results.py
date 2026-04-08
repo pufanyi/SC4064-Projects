@@ -4,7 +4,8 @@ Plot benchmark results from bench_single_gpu and bench_multi_gpu.
 
 Usage:
     ./bench_single_gpu | tee results/single_gpu.txt
-    python3 scripts/plot_results.py results/single_gpu.txt
+    ./bench_multi_gpu 8 7 | tee results/multi_gpu.txt
+    python3 scripts/plot_results.py results/single_gpu.txt [results/multi_gpu.txt]
 """
 
 import sys
@@ -127,9 +128,196 @@ def plot_roofline(peak_tflops=19.5, peak_bw_tb=2.0,
     print(f"Saved: {outfile}")
 
 
+def parse_multi_gpu(filename):
+    """Parse benchmark tables from bench_multi_gpu output."""
+    sections = {
+        'exp1': [],
+        'exp2': [],
+        'exp3': [],
+        'exp4': [],
+        'exp5': [],
+        'exp6': [],
+    }
+
+    current = None
+    with open(filename) as f:
+        for raw in f:
+            line = raw.strip()
+            if line.startswith('===== Exp 1'):
+                current = 'exp1'
+                continue
+            if line.startswith('===== Exp 2'):
+                current = 'exp2'
+                continue
+            if line.startswith('===== Exp 3'):
+                current = 'exp3'
+                continue
+            if line.startswith('===== Exp 4'):
+                current = 'exp4'
+                continue
+            if line.startswith('===== Exp 5'):
+                current = 'exp5'
+                continue
+            if line.startswith('===== Exp 6'):
+                current = 'exp6'
+                continue
+            if not current or not line or line.startswith('---') or line.startswith('M ') \
+               or line.startswith('Kernel') or line.startswith('Size'):
+                continue
+            if line.startswith('Done'):
+                break
+
+            parts = line.split()
+            try:
+                if current == 'exp1':
+                    sections[current].append({
+                        'M': int(parts[0]), 'N': int(parts[1]), 'K': int(parts[2]),
+                        'gpus': int(parts[3]), 'gemm_ms': float(parts[4]),
+                        'comm_ms': float(parts[5]), 'total_ms': float(parts[6]),
+                        'gflops': float(parts[7]),
+                    })
+                elif current == 'exp2':
+                    sections[current].append({
+                        'M': int(parts[0]), 'N_total': int(parts[1]), 'K': int(parts[2]),
+                        'gpus': int(parts[3]), 'gemm_ms': float(parts[4]),
+                        'comm_ms': float(parts[5]), 'total_ms': float(parts[6]),
+                        'gflops': float(parts[7]),
+                    })
+                elif current == 'exp3':
+                    sections[current].append({
+                        'size': int(parts[0]), 'gemm_ms': float(parts[1]),
+                        'comm_ms': float(parts[2]), 'ratio': float(parts[3]),
+                    })
+                elif current == 'exp4':
+                    sections[current].append({
+                        'kernel': parts[0], 'gemm_ms': float(parts[1]),
+                        'comm_ms': float(parts[2]), 'ratio': float(parts[3]),
+                    })
+                elif current == 'exp5':
+                    sections[current].append({
+                        'M': int(parts[0]), 'H': int(parts[1]), 'N': int(parts[2]),
+                        'gpus': int(parts[3]), 'fwd_ms': float(parts[4]),
+                        'bwd_ms': float(parts[5]), 'total_ms': float(parts[6]),
+                    })
+                elif current == 'exp6':
+                    sections[current].append({
+                        'size': int(parts[0]), 'chunks': int(parts[1]),
+                        'no_overlap_ms': float(parts[2]),
+                        'overlap_ms': float(parts[3]),
+                        'speedup': float(parts[4].rstrip('x')),
+                    })
+            except (IndexError, ValueError):
+                continue
+
+    return sections
+
+
+def plot_strong_scaling(exp1, outfile='results/strong_scaling.png'):
+    if not exp1:
+        return
+    fig, ax = plt.subplots(figsize=(10, 6))
+    sizes = sorted(set(row['M'] for row in exp1))
+    for size in sizes:
+        rows = sorted([r for r in exp1 if r['M'] == size], key=lambda r: r['gpus'])
+        ax.plot([r['gpus'] for r in rows], [r['total_ms'] for r in rows],
+                'o-', linewidth=2, label=f'Size {size}')
+    ax.set_xlabel('GPUs')
+    ax.set_ylabel('Total Time (ms)')
+    ax.set_title('Strong Scaling — Column Parallel Forward')
+    ax.grid(alpha=0.3)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
+def plot_weak_scaling(exp2, outfile='results/weak_scaling.png'):
+    if not exp2:
+        return
+    rows = sorted(exp2, key=lambda r: r['gpus'])
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot([r['gpus'] for r in rows], [r['total_ms'] for r in rows],
+            'o-', linewidth=2)
+    ax.set_xlabel('GPUs')
+    ax.set_ylabel('Total Time (ms)')
+    ax.set_title('Weak Scaling — Fixed 2048x2048 Local Workload')
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
+def plot_ratio_vs_size(exp3, outfile='results/comm_compute_ratio_vs_size.png'):
+    if not exp3:
+        return
+    rows = sorted(exp3, key=lambda r: r['size'])
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot([r['size'] for r in rows], [r['ratio'] for r in rows],
+            'o-', linewidth=2)
+    ax.set_xlabel('Matrix Size')
+    ax.set_ylabel('Comm / Compute Ratio')
+    ax.set_title('Communication vs Compute Ratio by Matrix Size')
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
+def plot_ratio_vs_kernel(exp4, outfile='results/comm_compute_ratio_vs_kernel.png'):
+    if not exp4:
+        return
+    fig, ax = plt.subplots(figsize=(11, 5))
+    kernels = [r['kernel'] for r in exp4]
+    ratios = [r['ratio'] for r in exp4]
+    ax.bar(kernels, ratios, color=plt.cm.plasma(np.linspace(0.15, 0.85, len(exp4))))
+    ax.set_ylabel('Comm / Compute Ratio')
+    ax.set_title('Communication vs Compute Ratio by Local GEMM Kernel')
+    ax.grid(axis='y', alpha=0.3)
+    ax.tick_params(axis='x', rotation=25)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
+def plot_mlp_timing(exp5, outfile='results/mlp_forward_backward.png'):
+    if not exp5:
+        return
+    rows = sorted(exp5, key=lambda r: r['M'])
+    sizes = [r['M'] for r in rows]
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.plot(sizes, [r['fwd_ms'] for r in rows], 'o-', linewidth=2, label='Forward')
+    ax.plot(sizes, [r['bwd_ms'] for r in rows], 'o-', linewidth=2, label='Backward')
+    ax.plot(sizes, [r['total_ms'] for r in rows], 'o-', linewidth=2, label='Total')
+    ax.set_xlabel('Matrix Size')
+    ax.set_ylabel('Time (ms)')
+    ax.set_title('Parallel MLP Forward/Backward Timing')
+    ax.grid(alpha=0.3)
+    ax.legend()
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
+def plot_overlap(exp6, outfile='results/overlap_speedup.png'):
+    if not exp6:
+        return
+    rows = sorted(exp6, key=lambda r: r['size'])
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.plot([r['size'] for r in rows], [r['speedup'] for r in rows],
+            'o-', linewidth=2)
+    ax.axhline(y=1.0, color='red', linestyle='--', alpha=0.5)
+    ax.set_xlabel('Matrix Size')
+    ax.set_ylabel('Speedup')
+    ax.set_title('Communication-Compute Overlap Speedup')
+    ax.grid(alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(outfile, dpi=150)
+    print(f"Saved: {outfile}")
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 2:
-        print("Usage: python3 plot_results.py <results_file>")
+        print("Usage: python3 plot_results.py <single_gpu_results> [multi_gpu_results]")
         print("Generating roofline model only...")
         plot_roofline()
         sys.exit(0)
@@ -139,3 +327,12 @@ if __name__ == '__main__':
         plot_gflops_comparison(sizes, kernels)
         plot_cublas_percentage(sizes, kernels)
     plot_roofline()
+
+    if len(sys.argv) >= 3:
+        multi = parse_multi_gpu(sys.argv[2])
+        plot_strong_scaling(multi['exp1'])
+        plot_weak_scaling(multi['exp2'])
+        plot_ratio_vs_size(multi['exp3'])
+        plot_ratio_vs_kernel(multi['exp4'])
+        plot_mlp_timing(multi['exp5'])
+        plot_overlap(multi['exp6'])

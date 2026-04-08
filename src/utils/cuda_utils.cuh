@@ -121,8 +121,10 @@ inline void print_device_info() {
     cudaDeviceProp prop;
     CUDA_CHECK(cudaGetDeviceProperties(&prop, dev));
     printf("=== Device %d: %s ===\n", dev, prop.name);
+    int clock_khz = 0;
+    cudaDeviceGetAttribute(&clock_khz, cudaDevAttrClockRate, dev);
     printf("  SM count:          %d\n", prop.multiProcessorCount);
-    printf("  Clock rate:        %d MHz\n", prop.clockRate / 1000);
+    printf("  Clock rate:        %d MHz\n", clock_khz / 1000);
     printf("  Memory:            %.1f GB\n",
            prop.totalGlobalMem / (1024.0 * 1024 * 1024));
     printf("  L2 Cache:          %d KB\n", prop.l2CacheSize / 1024);
@@ -131,9 +133,9 @@ inline void print_device_info() {
     printf("  Compute cap:       %d.%d\n", prop.major, prop.minor);
 
     // Theoretical peak TFLOPS (FP32): SM_count * cores_per_SM * 2 * clock
-    // A100: 108 SMs * 64 FP32 cores * 2 * 1.41 GHz ≈ 19.5 TFLOPS
+    // A100: 108 SMs * 64 FP32 cores * 2 * 1.41 GHz ~ 19.5 TFLOPS
     double peak = (double)prop.multiProcessorCount * 64 * 2 *
-                  (prop.clockRate / 1e6);
+                  (clock_khz / 1e6);
     printf("  ~Peak FP32:        %.1f TFLOPS\n", peak / 1000.0);
     printf("\n");
 }

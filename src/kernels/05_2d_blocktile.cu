@@ -125,10 +125,15 @@ __global__ void gemm_2d_blocktile(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_2d_blocktile(const float *A, const float *B, float *C,
-                              int M, int N, int K) {
+void launch_gemm_2d_blocktile_stream(const float *A, const float *B, float *C,
+                                     int M, int N, int K, cudaStream_t stream) {
     const int threads = (BM5 / TM5) * (BN5 / TN5);  // 256
     dim3 block(threads);
     dim3 grid((N + BN5 - 1) / BN5, (M + BM5 - 1) / BM5);
-    gemm_2d_blocktile<<<grid, block>>>(A, B, C, M, N, K);
+    gemm_2d_blocktile<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+}
+
+void launch_gemm_2d_blocktile(const float *A, const float *B, float *C,
+                              int M, int N, int K) {
+    launch_gemm_2d_blocktile_stream(A, B, C, M, N, K, 0);
 }

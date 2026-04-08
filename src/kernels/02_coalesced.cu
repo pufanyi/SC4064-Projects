@@ -56,12 +56,17 @@ __global__ void gemm_coalesced(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_coalesced(const float *A, const float *B, float *C,
-                           int M, int N, int K) {
+void launch_gemm_coalesced_stream(const float *A, const float *B, float *C,
+                                  int M, int N, int K, cudaStream_t stream) {
     const int BLOCK = 32;
     dim3 block(BLOCK, BLOCK);
     dim3 grid((N + BLOCK - 1) / BLOCK, (M + BLOCK - 1) / BLOCK);
-    gemm_coalesced<<<grid, block>>>(A, B, C, M, N, K);
+    gemm_coalesced<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+}
+
+void launch_gemm_coalesced(const float *A, const float *B, float *C,
+                           int M, int N, int K) {
+    launch_gemm_coalesced_stream(A, B, C, M, N, K, 0);
 }
 
 // Exported for comparison benchmarking

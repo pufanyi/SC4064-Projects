@@ -133,11 +133,16 @@ __global__ void gemm_warptile(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_warptile(const float *A, const float *B, float *C,
-                          int M, int N, int K) {
+void launch_gemm_warptile_stream(const float *A, const float *B, float *C,
+                                 int M, int N, int K, cudaStream_t stream) {
     const int warps = (BM7 / WM7) * (BN7 / WN7);       // 8
     const int threads = warps * 32;                       // 256
     dim3 block(threads);
     dim3 grid((N + BN7 - 1) / BN7, (M + BM7 - 1) / BM7);
-    gemm_warptile<<<grid, block>>>(A, B, C, M, N, K);
+    gemm_warptile<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+}
+
+void launch_gemm_warptile(const float *A, const float *B, float *C,
+                          int M, int N, int K) {
+    launch_gemm_warptile_stream(A, B, C, M, N, K, 0);
 }

@@ -143,10 +143,15 @@ __global__ void gemm_vectorized(const float * __restrict__ A,
     }
 }
 
-void launch_gemm_vectorized(const float *A, const float *B, float *C,
-                            int M, int N, int K) {
+void launch_gemm_vectorized_stream(const float *A, const float *B, float *C,
+                                   int M, int N, int K, cudaStream_t stream) {
     const int threads = (BM6 / TM6) * (BN6 / TN6);
     dim3 block(threads);
     dim3 grid((N + BN6 - 1) / BN6, (M + BM6 - 1) / BM6);
-    gemm_vectorized<<<grid, block>>>(A, B, C, M, N, K);
+    gemm_vectorized<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
+}
+
+void launch_gemm_vectorized(const float *A, const float *B, float *C,
+                            int M, int N, int K) {
+    launch_gemm_vectorized_stream(A, B, C, M, N, K, 0);
 }
