@@ -26,25 +26,11 @@
  *   Row backward:    dX_i = dY @ W_i^T (no comm), dW_i = X_i^T @ dY
  */
 
-#include <cublas_v2.h>
-#include <cuda_runtime.h>
-#include <nccl.h>
+#include "tensor_parallel.cuh"
 
-#include <cstdio>
-#include <cstdlib>
-
-#include "../kernels/gemm_dispatch.cuh"
-#include "../kernels/kernels.cuh"
+#include "../utils/cuda_raii.cuh"
 #include "../utils/cuda_utils.cuh"
-
-#define NCCL_CHECK(cmd)                                                                            \
-    do {                                                                                           \
-        ncclResult_t r = cmd;                                                                      \
-        if (r != ncclSuccess) {                                                                    \
-            fprintf(stderr, "NCCL error %s:%d '%s'\n", __FILE__, __LINE__, ncclGetErrorString(r)); \
-            exit(EXIT_FAILURE);                                                                    \
-        }                                                                                          \
-    } while (0)
+#include "../utils/nccl_utils.cuh"
 
 // ============================================================================
 // Helper: transpose matrix on GPU via cuBLAS (out-of-place)
@@ -57,7 +43,7 @@ static void gpu_transpose(cublasHandle_t handle, const float* A, float* B, int M
     // cublasSgeam: B = alpha * A^T + beta * B
     CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, M,
                              N,             // output is N x M in col-major = M x N row-major
-                             &alpha, A, N,  // A is M x N row-major → N x M col-major, lda=N
+                             &alpha, A, N,  // A is M x N row-major -> N x M col-major, lda=N
                              &beta, B, M,   // B placeholder, ldb=M
                              B, M));        // C output, ldc=M
 }
@@ -75,18 +61,10 @@ static void local_gemm(const float* A, const float* B, float* C, int M, int N, i
 // FORWARD PASSES
 // ============================================================================
 
-// ---------------------------------------------------------------------------
-// Column Parallel Linear Forward: Y = X @ W  where W is column-sharded
-// ---------------------------------------------------------------------------
-// Each GPU holds W_i of shape [K, N/p] and computes Y_i = X @ W_i
-// Output: AllGather -> full Y of shape [M, N] (optional)
-void column_parallel_forward(const float* d_X,        // [M, K] -- replicated on all GPUs
-                             const float* d_W_shard,  // [K, N/p] -- local weight shard
-                             float* d_Y_local,        // [M, N/p] -- local output
-                             float* d_Y_full,  // [M, N] -- gathered output (optional, can be NULL)
-                             int M, int N, int K, int num_gpus, int gpu_id, cublasHandle_t handle,
-                             ncclComm_t comm, cudaStream_t stream,
-                             GemmKernel kernel = GemmKernel::CUBLAS) {
+void column_parallel_forward(const float* d_X, const float* d_W_shard, float* d_Y_local,
+                             float* d_Y_full, int M, int N, int K, int num_gpus, int gpu_id,
+                             cublasHandle_t handle, ncclComm_t comm, cudaStream_t stream,
+                             GemmKernel kernel) {
     int N_local = N / num_gpus;
 
     // Local GEMM: Y_local = X @ W_shard
@@ -105,18 +83,10 @@ void column_parallel_forward(const float* d_X,        // [M, K] -- replicated on
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row Parallel Linear Forward: Y = X @ W  where W is row-sharded
-// ---------------------------------------------------------------------------
-// Each GPU holds W_i of shape [K/p, N] and X_i of shape [M, K/p]
-// Computes partial Y_i = X_i @ W_i, then AllReduce to sum
-void row_parallel_forward(const float* d_X_shard,  // [M, K/p] -- local input shard
-                          const float* d_W_shard,  // [K/p, N] -- local weight shard
-                          float* d_Y_local,        // [M, N] -- local partial output
-                          float* d_Y_reduced,      // [M, N] -- all-reduced output
-                          int M, int N, int K, int num_gpus, int gpu_id, cublasHandle_t handle,
-                          ncclComm_t comm, cudaStream_t stream,
-                          GemmKernel kernel = GemmKernel::CUBLAS) {
+void row_parallel_forward(const float* d_X_shard, const float* d_W_shard, float* d_Y_local,
+                          float* d_Y_reduced, int M, int N, int K, int num_gpus, int gpu_id,
+                          cublasHandle_t handle, ncclComm_t comm, cudaStream_t stream,
+                          GemmKernel kernel) {
     int K_local = K / num_gpus;
 
     // Local GEMM: Y_local = X_shard @ W_shard
@@ -137,51 +107,26 @@ void row_parallel_forward(const float* d_X_shard,  // [M, K/p] -- local input sh
 // BACKWARD PASSES
 // ============================================================================
 
-// ---------------------------------------------------------------------------
-// Column Parallel Linear Backward
-// ---------------------------------------------------------------------------
-// Forward was: Y_i = X @ W_i  (each GPU has W_i [K, N/p], full X [M, K])
-//
-// Backward:
-//   dW_i = X^T @ dY_i        [K, N/p]  -- local, no communication
-//   dX_i = dY_i @ W_i^T      [M, K]    -- partial gradient
-//   dX   = AllReduce(dX_i)    [M, K]    -- sum partials across GPUs
-void column_parallel_backward(
-    const float* d_X,         // [M, K] -- replicated input (saved from forward)
-    const float* d_W_shard,   // [K, N/p] -- local weight shard
-    const float* d_dY_local,  // [M, N/p] -- incoming gradient (local shard)
-    float* d_dW_shard,        // [K, N/p] -- weight gradient output
-    float* d_dX_partial,      // [M, K] -- partial input gradient (workspace)
-    float* d_dX,              // [M, K] -- full input gradient (after AllReduce)
-    float* d_W_shard_T,       // [N/p, K] -- workspace for W^T
-    int M, int N, int K, int num_gpus, int gpu_id, cublasHandle_t handle, ncclComm_t comm,
-    cudaStream_t stream, GemmKernel kernel = GemmKernel::CUBLAS) {
+void column_parallel_backward(const float* d_X, const float* d_W_shard, const float* d_dY_local,
+                              float* d_dW_shard, float* d_dX_partial, float* d_dX,
+                              float* d_W_shard_T, int M, int N, int K, int num_gpus, int gpu_id,
+                              cublasHandle_t handle, ncclComm_t comm, cudaStream_t stream,
+                              GemmKernel kernel) {
     int N_local = N / num_gpus;
 
     // dW_i = X^T @ dY_i  [K, M] x [M, N/p] = [K, N/p]
-    // Using cuBLAS for transpose: X^T @ dY_i
     if (kernel == GemmKernel::CUBLAS) {
         float alpha = 1.0f, beta = 0.0f;
         CUBLAS_CHECK(cublasSetStream(handle, stream));
-        // C = A^T @ B  in row-major:
-        // cublasSgemm(N, T, ...) with col-major trick
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, N_local, K, M, &alpha,
-                                 d_dY_local, N_local,           // dY^T in col-major
-                                 d_X, K,                        // X^T in col-major
-                                 &beta, d_dW_shard, N_local));  // dW^T in col-major
+                                 d_dY_local, N_local, d_X, K, &beta, d_dW_shard, N_local));
     } else {
-        // Custom kernels expect row-major C = A @ B
-        // Need explicit transpose: X_T [K, M] = transpose(X [M, K])
-        // Then: dW = X_T @ dY_local
-        float* d_X_T;
-        CUDA_CHECK(cudaMalloc(&d_X_T, K * M * sizeof(float)));
-        gpu_transpose(handle, d_X, d_X_T, M, K, stream);
+        CudaMemory<float> d_X_T(K * M);
+        gpu_transpose(handle, d_X, d_X_T.get(), M, K, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_X_T, d_dY_local, d_dW_shard, K, N_local, M);
-
-        CUDA_CHECK(cudaFree(d_X_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_X_T.get(), d_dY_local, d_dW_shard, K, N_local, M);
     }
 
     // dX_partial = dY_i @ W_i^T  [M, N/p] x [N/p, K] = [M, K]
@@ -191,11 +136,10 @@ void column_parallel_backward(
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, M, N_local, &alpha, d_W_shard,
                                  N_local, d_dY_local, N_local, &beta, d_dX_partial, K));
     } else {
-        // Explicit transpose W^T
         gpu_transpose(handle, d_W_shard, d_W_shard_T, K, N_local, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
         fn(d_dY_local, d_W_shard_T, d_dX_partial, M, K, N_local);
     }
 
@@ -210,27 +154,10 @@ void column_parallel_backward(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Row Parallel Linear Backward
-// ---------------------------------------------------------------------------
-// Forward was: Y = AllReduce(X_i @ W_i)
-//   Each GPU has W_i [K/p, N], X_i [M, K/p]
-//
-// Backward:
-//   dW_i = X_i^T @ dY     [K/p, N]  -- local, no communication
-//   dX_i = dY @ W_i^T     [M, K/p]  -- local gradient shard, no communication
-//
-// No AllReduce needed in backward! The gradient naturally splits because
-// each GPU only needs its own shard dX_i.
-void row_parallel_backward(
-    const float* d_X_shard,  // [M, K/p] -- local input shard (saved from forward)
-    const float* d_W_shard,  // [K/p, N] -- local weight shard
-    const float* d_dY,       // [M, N] -- incoming gradient (replicated after AllReduce in fwd)
-    float* d_dW_shard,       // [K/p, N] -- weight gradient output
-    float* d_dX_shard,       // [M, K/p] -- input gradient shard output
-    float* d_W_shard_T,      // [N, K/p] -- workspace for W^T
-    int M, int N, int K, int num_gpus, int gpu_id, cublasHandle_t handle, ncclComm_t comm,
-    cudaStream_t stream, GemmKernel kernel = GemmKernel::CUBLAS) {
+void row_parallel_backward(const float* d_X_shard, const float* d_W_shard, const float* d_dY,
+                           float* d_dW_shard, float* d_dX_shard, float* d_W_shard_T, int M, int N,
+                           int K, int num_gpus, int gpu_id, cublasHandle_t handle, ncclComm_t comm,
+                           cudaStream_t stream, GemmKernel kernel) {
     int K_local = K / num_gpus;
 
     // dW_i = X_i^T @ dY  [K/p, M] x [M, N] = [K/p, N]
@@ -240,15 +167,12 @@ void row_parallel_backward(
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, N, K_local, M, &alpha, d_dY, N,
                                  d_X_shard, K_local, &beta, d_dW_shard, N));
     } else {
-        float* d_X_T;
-        CUDA_CHECK(cudaMalloc(&d_X_T, K_local * M * sizeof(float)));
-        gpu_transpose(handle, d_X_shard, d_X_T, M, K_local, stream);
+        CudaMemory<float> d_X_T(K_local * M);
+        gpu_transpose(handle, d_X_shard, d_X_T.get(), M, K_local, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_X_T, d_dY, d_dW_shard, K_local, N, M);
-
-        CUDA_CHECK(cudaFree(d_X_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_X_T.get(), d_dY, d_dW_shard, K_local, N, M);
     }
 
     // dX_i = dY @ W_i^T  [M, N] x [N, K/p] = [M, K/p]
@@ -261,7 +185,7 @@ void row_parallel_backward(
         gpu_transpose(handle, d_W_shard, d_W_shard_T, K_local, N, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
         fn(d_dY, d_W_shard_T, d_dX_shard, M, K_local, N);
     }
 }
@@ -270,29 +194,17 @@ void row_parallel_backward(
 // PARALLEL MLP BLOCK (FORWARD + BACKWARD)
 // ============================================================================
 
-// ---------------------------------------------------------------------------
-// Parallel MLP Forward
-// ---------------------------------------------------------------------------
-// MLP(X) = ReLU(X @ W1) @ W2
-// W1: column parallel [K, H] -> each GPU has [K, H/p]
-// W2: row parallel    [H, N] -> each GPU has [H/p, N]
-// Communication: ONE AllReduce (in row parallel of W2)
-void parallel_mlp_forward(const float* d_X,         // [M, K] replicated
-                          const float* d_W1_shard,  // [K, H/p] column shard
-                          const float* d_W2_shard,  // [H/p, N] row shard
-                          float* d_hidden,          // [M, H/p] intermediate
-                          float* d_Y_partial,       // [M, N] partial output
-                          float* d_Y,               // [M, N] final output
-                          int M, int K, int H, int N, int num_gpus, int gpu_id,
-                          cublasHandle_t handle, ncclComm_t comm, cudaStream_t stream,
-                          GemmKernel kernel = GemmKernel::CUBLAS) {
+void parallel_mlp_forward(const float* d_X, const float* d_W1_shard, const float* d_W2_shard,
+                          float* d_hidden, float* d_Y_partial, float* d_Y, int M, int K, int H,
+                          int N, int num_gpus, int gpu_id, cublasHandle_t handle, ncclComm_t comm,
+                          cudaStream_t stream, GemmKernel kernel) {
     int H_local = H / num_gpus;
 
     // Layer 1: Column parallel -- hidden = X @ W1_shard  [M, H/p]
     local_gemm(d_X, d_W1_shard, d_hidden, M, H_local, K, kernel, handle, stream);
 
     // ReLU activation (in-place)
-    // For simplicity, skip activation — focus is on GEMM + communication
+    // For simplicity, skip activation -- focus is on GEMM + communication
 
     // Layer 2: Row parallel -- Y_partial = hidden @ W2_shard  [M, N]
     local_gemm(d_hidden, d_W2_shard, d_Y_partial, M, N, H_local, kernel, handle, stream);
@@ -308,37 +220,12 @@ void parallel_mlp_forward(const float* d_X,         // [M, K] replicated
     }
 }
 
-// ---------------------------------------------------------------------------
-// Parallel MLP Backward
-// ---------------------------------------------------------------------------
-// Forward: hidden_i = X @ W1_i,  Y = AllReduce(hidden_i @ W2_i)
-//
-// Backward (reverse order):
-//   1. Row parallel backward (W2): no AllReduce needed
-//      dW2_i = hidden_i^T @ dY    [H/p, N]
-//      d_hidden_i = dY @ W2_i^T   [M, H/p]
-//
-//   2. (ReLU backward would go here if activation were applied)
-//
-//   3. Column parallel backward (W1): ONE AllReduce
-//      dW1_i = X^T @ d_hidden_i          [K, H/p]
-//      dX_partial = d_hidden_i @ W1_i^T   [M, K]
-//      dX = AllReduce(dX_partial)          [M, K]
-//
-// Total communication in backward: ONE AllReduce (symmetric with forward)
-void parallel_mlp_backward(const float* d_X,         // [M, K] saved from forward
-                           const float* d_W1_shard,  // [K, H/p] saved from forward
-                           const float* d_W2_shard,  // [H/p, N] saved from forward
-                           const float* d_hidden,    // [M, H/p] saved from forward
-                           const float* d_dY,        // [M, N] incoming gradient
-                           float* d_dW1_shard,       // [K, H/p] output: W1 gradient
-                           float* d_dW2_shard,       // [H/p, N] output: W2 gradient
-                           float* d_d_hidden,        // [M, H/p] workspace: hidden gradient
-                           float* d_dX_partial,      // [M, K] workspace: partial X gradient
-                           float* d_dX,              // [M, K] output: full X gradient
+void parallel_mlp_backward(const float* d_X, const float* d_W1_shard, const float* d_W2_shard,
+                           const float* d_hidden, const float* d_dY, float* d_dW1_shard,
+                           float* d_dW2_shard, float* d_d_hidden, float* d_dX_partial, float* d_dX,
                            int M, int K, int H, int N, int num_gpus, int gpu_id,
                            cublasHandle_t handle, ncclComm_t comm, cudaStream_t stream,
-                           GemmKernel kernel = GemmKernel::CUBLAS) {
+                           GemmKernel kernel) {
     int H_local = H / num_gpus;
 
     // --- Step 1: Row parallel backward (W2 layer) ---
@@ -349,31 +236,27 @@ void parallel_mlp_backward(const float* d_X,         // [M, K] saved from forwar
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, N, H_local, M, &alpha, d_dY, N,
                                  d_hidden, H_local, &beta, d_dW2_shard, N));
     } else {
-        float* d_hidden_T;
-        CUDA_CHECK(cudaMalloc(&d_hidden_T, H_local * M * sizeof(float)));
-        gpu_transpose(handle, d_hidden, d_hidden_T, M, H_local, stream);
+        CudaMemory<float> d_hidden_T(H_local * M);
+        gpu_transpose(handle, d_hidden, d_hidden_T.get(), M, H_local, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_hidden_T, d_dY, d_dW2_shard, H_local, N, M);
-        CUDA_CHECK(cudaFree(d_hidden_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_hidden_T.get(), d_dY, d_dW2_shard, H_local, N, M);
     }
 
-    // d_hidden_i = dY @ W2_i^T  [M, K/p]
+    // d_hidden_i = dY @ W2_i^T  [M, H/p]
     if (kernel == GemmKernel::CUBLAS) {
         float alpha = 1.0f, beta = 0.0f;
         CUBLAS_CHECK(cublasSetStream(handle, stream));
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, H_local, M, N, &alpha,
                                  d_W2_shard, N, d_dY, N, &beta, d_d_hidden, H_local));
     } else {
-        float* d_W2_T;
-        CUDA_CHECK(cudaMalloc(&d_W2_T, N * H_local * sizeof(float)));
-        gpu_transpose(handle, d_W2_shard, d_W2_T, H_local, N, stream);
+        CudaMemory<float> d_W2_T(N * H_local);
+        gpu_transpose(handle, d_W2_shard, d_W2_T.get(), H_local, N, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_dY, d_W2_T, d_d_hidden, M, H_local, N);
-        CUDA_CHECK(cudaFree(d_W2_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_dY, d_W2_T.get(), d_d_hidden, M, H_local, N);
     }
 
     // (ReLU backward would multiply d_hidden by mask here)
@@ -386,14 +269,12 @@ void parallel_mlp_backward(const float* d_X,         // [M, K] saved from forwar
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, H_local, K, M, &alpha,
                                  d_d_hidden, H_local, d_X, K, &beta, d_dW1_shard, H_local));
     } else {
-        float* d_X_T;
-        CUDA_CHECK(cudaMalloc(&d_X_T, K * M * sizeof(float)));
-        gpu_transpose(handle, d_X, d_X_T, M, K, stream);
+        CudaMemory<float> d_X_T(K * M);
+        gpu_transpose(handle, d_X, d_X_T.get(), M, K, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_X_T, d_d_hidden, d_dW1_shard, K, H_local, M);
-        CUDA_CHECK(cudaFree(d_X_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_X_T.get(), d_d_hidden, d_dW1_shard, K, H_local, M);
     }
 
     // dX_partial = d_hidden_i @ W1_i^T  [M, K]
@@ -403,14 +284,12 @@ void parallel_mlp_backward(const float* d_X,         // [M, K] saved from forwar
         CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, K, M, H_local, &alpha,
                                  d_W1_shard, H_local, d_d_hidden, H_local, &beta, d_dX_partial, K));
     } else {
-        float* d_W1_T;
-        CUDA_CHECK(cudaMalloc(&d_W1_T, H_local * K * sizeof(float)));
-        gpu_transpose(handle, d_W1_shard, d_W1_T, K, H_local, stream);
+        CudaMemory<float> d_W1_T(H_local * K);
+        gpu_transpose(handle, d_W1_shard, d_W1_T.get(), K, H_local, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
 
-        GemmLaunchFn fn = get_gemm_launch_fn(kernel);
-        fn(d_d_hidden, d_W1_T, d_dX_partial, M, K, H_local);
-        CUDA_CHECK(cudaFree(d_W1_T));
+        auto fn = kGemmLaunchFns[static_cast<int>(kernel)];
+        fn(d_d_hidden, d_W1_T.get(), d_dX_partial, M, K, H_local);
     }
 
     // AllReduce: dX = sum(dX_partial) across GPUs
@@ -428,29 +307,15 @@ void parallel_mlp_backward(const float* d_X,         // [M, K] saved from forwar
 // COMMUNICATION-COMPUTE OVERLAP
 // ============================================================================
 
-// ---------------------------------------------------------------------------
-// Row Parallel Forward with Overlap
-// ---------------------------------------------------------------------------
-// Splits the GEMM output into chunks. Each chunk's AllReduce overlaps with
-// the next chunk's GEMM computation using separate CUDA streams.
-//
-// This is beneficial when comm and compute take similar time.
-// Uses ncclGroupStart/End to batch NCCL operations.
-void row_parallel_forward_overlap(const float* d_X_shard,  // [M, K/p]
-                                  const float* d_W_shard,  // [K/p, N]
-                                  float* d_Y_local,        // [M, N] partial output
-                                  float* d_Y_reduced,      // [M, N] final output
-                                  int M, int N, int K, int num_gpus, int gpu_id,
-                                  int num_chunks,  // number of row chunks for overlap
-                                  cublasHandle_t handle, ncclComm_t comm,
+void row_parallel_forward_overlap(const float* d_X_shard, const float* d_W_shard, float* d_Y_local,
+                                  float* d_Y_reduced, int M, int N, int K, int num_gpus, int gpu_id,
+                                  int num_chunks, cublasHandle_t handle, ncclComm_t comm,
                                   cudaStream_t compute_stream, cudaStream_t comm_stream,
-                                  GemmKernel kernel = GemmKernel::CUBLAS) {
+                                  GemmKernel kernel) {
     int K_local = K / num_gpus;
     int chunk_rows = (M + num_chunks - 1) / num_chunks;
 
-    // Event for synchronization between streams
-    cudaEvent_t compute_done;
-    CUDA_CHECK(cudaEventCreate(&compute_done));
+    CudaEvent compute_done;
 
     for (int c = 0; c < num_chunks; c++) {
         int row_start = c * chunk_rows;
@@ -467,7 +332,7 @@ void row_parallel_forward_overlap(const float* d_X_shard,  // [M, K/p]
                                 handle, compute_stream);
 
         // Record event: GEMM for this chunk done
-        CUDA_CHECK(cudaEventRecord(compute_done, compute_stream));
+        compute_done.record(compute_stream);
 
         // Comm stream waits for compute to finish this chunk
         CUDA_CHECK(cudaStreamWaitEvent(comm_stream, compute_done, 0));
@@ -487,6 +352,4 @@ void row_parallel_forward_overlap(const float* d_X_shard,  // [M, K/p]
 
     // Wait for all communication to complete
     CUDA_CHECK(cudaStreamSynchronize(comm_stream));
-
-    CUDA_CHECK(cudaEventDestroy(compute_done));
 }

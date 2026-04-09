@@ -60,8 +60,8 @@
   #text(weight: "bold")[Abstract.]
   General Matrix Multiplication (GEMM) is the computational backbone of modern deep learning.
   This report presents a systematic study across two dimensions: (i) progressive single-GPU CUDA kernel optimization through seven stages---from naive global memory access to warp-level tiling---benchmarked against cuBLAS on NVIDIA H100 GPUs; and (ii) multi-GPU tensor parallelism using NCCL, implementing column-parallel and row-parallel linear layers following the Megatron-LM paradigm.
-  Our best custom kernel achieves 97% of cuBLAS throughput at 32.6 TFLOPS.
-  Scaling experiments on 8$times$H100 GPUs reveal that as local GEMM kernels approach peak performance, the communication-to-computation ratio rises from 0.20 (naive kernel) to 0.84 (cuBLAS), quantifying the crossover where inter-GPU communication becomes the dominant bottleneck.
+  Our best custom kernel achieves 63% of cuBLAS throughput at 32.8 TFLOPS.
+  Scaling experiments on 8$times$H100 GPUs with matrices up to $32768 times 32768$ demonstrate $7.6 times$ strong-scaling speedup and 400 TFLOPS aggregate throughput. As local GEMM kernels approach peak performance, the communication-to-computation ratio rises from 0.20 (naive kernel) to 0.85 (cuBLAS), quantifying the crossover where inter-GPU communication becomes the dominant bottleneck.
 ]
 
 #v(0.6em)
@@ -259,9 +259,9 @@ All kernels pass correctness verification against a CPU reference at $M = N = K 
 
 - *Shared memory tiling* (Kernel 3) improves throughput to $tilde 9{,}000$ GFLOPS by reducing global memory traffic by $32 times$, but remains below the compute-bound regime.
 
-- *Register blocking* (Kernels 4--7) produces the most dramatic gains. The 2D block tile reaches 22,044 GFLOPS at $N = 4096$---a $3.5 times$ improvement over shared memory alone. Vectorized loads push this to 32,612 GFLOPS (97.3% of peak cuBLAS).
+- *Register blocking* (Kernels 4--7) produces the most dramatic gains. The 2D block tile reaches 22,044 GFLOPS at $N = 4096$---a $3.5 times$ improvement over shared memory alone. Vectorized loads push this to 32,612 GFLOPS at $N = 4096$, sustaining $tilde 32{,}000$ GFLOPS through $N = 16384$.
 
-- *cuBLAS* achieves 51,712 GFLOPS ($tilde 154%$ of our best), leveraging Tensor Core paths and auto-tuning unavailable to our FP32-only kernels.
+- *cuBLAS* achieves 53,304 GFLOPS at $N = 16384$ ($tilde 162%$ of our best), leveraging Tensor Core paths and auto-tuning unavailable to our FP32-only kernels.
 
 #fig(
   "../results/figures/cublas_percentage.pdf",
@@ -296,19 +296,19 @@ All multi-GPU experiments use 8$times$H100 GPUs connected via NVLink. For backwa
 
 #fig(
   "../results/figures/strong_scaling.pdf",
-  [Strong scaling: total wall-clock time vs. number of GPUs for three matrix sizes. Dashed lines show ideal linear speedup. Larger matrices scale better due to higher compute-to-communication ratio.],
+  [Strong scaling: total wall-clock time vs. number of GPUs for five matrix sizes up to $32768$. Dashed lines show ideal linear speedup. Larger matrices scale significantly better.],
   width: 72%,
 ) <fig:strong>
 
-@fig:strong shows that the $N = 8192$ workload scales from 21.4 ms (1 GPU) to 3.8 ms (8 GPUs)---a $5.6 times$ speedup, or 70% parallel efficiency. The $N = 2048$ case achieves only $0.86 times$ speedup at 8 GPUs due to communication overhead exceeding the reduced compute time.
+@fig:strong shows that the $N = 32768$ workload scales from 1331 ms (1 GPU) to 176 ms (8 GPUs)---a $7.6 times$ speedup, or *94.5% parallel efficiency*, achieving 400 TFLOPS aggregate throughput. Even $N = 8192$ achieves a respectable $4.1 times$ speedup. The $N = 2048$ case sees diminishing returns as communication overhead dominates at small matrix sizes.
 
 #fig(
   "../results/figures/strong_scaling_efficiency.pdf",
-  [Parallel efficiency $eta = T_1 / (p dot T_p)$ for strong scaling. Efficiency exceeds 100% at small GPU counts due to reduced per-GPU working set fitting better in cache. At 8 GPUs, only $N = 8192$ maintains $>$70% efficiency.],
+  [Parallel efficiency $eta = T_1 / (p dot T_p)$ for strong scaling. At $N = 32768$, efficiency remains above 94% at 8 GPUs. Super-linear efficiency at small GPU counts is due to improved cache utilization.],
   width: 72%,
 ) <fig:efficiency>
 
-@fig:efficiency reveals super-linear speedup at $p = 2$ and $p = 4$ for $N = 8192$: the halved per-GPU matrix fits better in L2 cache, reducing memory traffic beyond the $1 slash p$ ideal. At $p = 8$, communication overhead erodes this advantage.
+@fig:efficiency shows that large matrices maintain near-ideal efficiency. At $N = 32768$, efficiency stays above 94% even at 8 GPUs because communication ($tilde 11$ ms) is dwarfed by compute ($tilde 166$ ms). Super-linear speedup at $p = 2$ for $N = 8192$ occurs because the halved per-GPU working set fits better in L2 cache.
 
 == Weak Scaling
 
@@ -325,21 +325,21 @@ This is the central experiment of the project, directly addressing the question:
 
 #fig(
   "../results/figures/comm_compute_ratio_size.pdf",
-  [GEMM time vs. communication time at different matrix sizes (8 GPUs, cuBLAS kernel). The ratio (annotated) decreases from 0.96 at $N = 2048$ to 0.36 at $N = 8192$: larger matrices amortize communication cost.],
-  width: 62%,
+  [GEMM time vs. communication time at different matrix sizes (8 GPUs, cuBLAS kernel). The ratio decreases from 0.99 at $N = 2048$ to 0.07 at $N = 32768$ as compute grows $O(N^3)$ while communication grows $O(N^2)$.],
+  width: 72%,
 ) <fig:ratio_size>
 
-@fig:ratio_size shows that at $N = 2048$, communication time (0.46 ms) nearly equals compute time (0.48 ms), yielding a ratio of 0.96. At $N = 8192$, compute grows cubically while communication grows quadratically, reducing the ratio to 0.36. This confirms that tensor parallelism is most effective for large matrices.
+@fig:ratio_size demonstrates the cubic-vs-quadratic scaling law. At $N = 2048$, communication (0.47 ms) nearly equals compute (0.48 ms), yielding a ratio of 0.99. At $N = 32768$, compute grows to 166 ms while communication is only 11 ms---a ratio of *0.07*. This confirms that tensor parallelism is most effective for the large matrix sizes encountered in modern Transformer models (e.g., hidden dimension 12288--16384 in GPT-3/LLaMA).
 
 #fig(
   "../results/figures/comm_compute_ratio_kernel.pdf",
-  [Left: absolute GEMM and communication time per kernel at $N = 4096$ on 8 GPUs. Communication time is constant ($tilde 0.62$ ms) across kernels. Right: the communication-to-compute ratio rises monotonically from 0.20 (naive) to 0.84 (cuBLAS) as kernels get faster.],
+  [Left: absolute GEMM and communication time per kernel at $N = 4096$ on 8 GPUs. Communication time is constant ($tilde 0.64$ ms) across kernels. Right: the communication-to-compute ratio rises monotonically from 0.20 (naive) to 0.85 (cuBLAS) as kernels get faster.],
 ) <fig:ratio_kernel>
 
-@fig:ratio_kernel is the *key result*. Communication time is constant across kernels ($tilde 0.62$ ms)---it depends only on data volume and interconnect bandwidth. As local GEMM time decreases from 3.13 ms (naive) to 0.74 ms (cuBLAS), the ratio rises from 0.20 to 0.84. This means:
+@fig:ratio_kernel is the *key result*. Communication time is constant across kernels ($tilde 0.64$ ms)---it depends only on data volume and interconnect bandwidth. As local GEMM time decreases from 3.15 ms (naive) to 0.75 ms (cuBLAS), the ratio rises from 0.20 to 0.85. This means:
 
 - For *naive kernels*, communication is negligible (20% of compute)---further kernel optimization yields direct end-to-end speedup.
-- For *cuBLAS*, communication consumes 84% of compute time---the system is approaching the _communication-bound_ regime where kernel optimization alone provides diminishing returns.
+- For *cuBLAS*, communication consumes 85% of compute time---the system is approaching the _communication-bound_ regime where kernel optimization alone provides diminishing returns.
 
 This crossover is the fundamental tension in distributed deep learning: local compute efficiency and system-level communication efficiency must be co-optimized.
 

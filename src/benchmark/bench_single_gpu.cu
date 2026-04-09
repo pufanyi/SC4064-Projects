@@ -7,15 +7,15 @@
  * Usage: ./bench_single_gpu [--verify-only] [--size M,N,K]
  */
 
-#include <cublas_v2.h>
-
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "../kernels/kernels.cuh"
+#include "../utils/cuda_raii.cuh"
 #include "../utils/cuda_utils.cuh"
+#include "../utils/device_matrix.cuh"
 
 // Also expose uncoalesced for comparison
 extern void launch_gemm_uncoalesced(const float* A, const float* B, float* C, int M, int N, int K);
@@ -31,13 +31,11 @@ double benchmark_kernel(void (*launch)(const float*, const float*, float*, int, 
                         int warmup = 3, int repeat = 10) {
     GpuTimer timer;
 
-    // Warmup
     for (int i = 0; i < warmup; i++) {
         launch(dA, dB, dC, M, N, K);
     }
     CUDA_CHECK(cudaDeviceSynchronize());
 
-    // Benchmark
     timer.tic();
     for (int i = 0; i < repeat; i++) {
         launch(dA, dB, dC, M, N, K);
@@ -68,26 +66,18 @@ int main(int argc, char** argv) {
     // --- Correctness verification (small matrix) ---
     printf("===== Correctness Verification (M=N=K=256) =====\n");
     {
-        const int M = 256, N = 256, K = 256;
-        size_t sizeA = M * K * sizeof(float);
-        size_t sizeB = K * N * sizeof(float);
-        size_t sizeC = M * N * sizeof(float);
+        constexpr int M = 256, N = 256, K = 256;
 
-        float* hA = (float*)malloc(sizeA);
-        float* hB = (float*)malloc(sizeB);
-        float* hC_ref = (float*)malloc(sizeC);
-        float* hC_gpu = (float*)malloc(sizeC);
+        // Host matrices
+        std::vector<float> hA(M * K), hB(K * N), hC_ref(M * N), hC_gpu(M * N);
+        init_matrix(hA.data(), M, K, 42);
+        init_matrix(hB.data(), K, N, 137);
+        cpu_gemm(hA.data(), hB.data(), hC_ref.data(), M, N, K);
 
-        init_matrix(hA, M, K, 42);
-        init_matrix(hB, K, N, 137);
-        cpu_gemm(hA, hB, hC_ref, M, N, K);
-
-        float *dA, *dB, *dC;
-        CUDA_CHECK(cudaMalloc(&dA, sizeA));
-        CUDA_CHECK(cudaMalloc(&dB, sizeB));
-        CUDA_CHECK(cudaMalloc(&dC, sizeC));
-        CUDA_CHECK(cudaMemcpy(dA, hA, sizeA, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(dB, hB, sizeB, cudaMemcpyHostToDevice));
+        // Device matrices
+        DeviceMatrix dA(M, K), dB(K, N), dC(M, N);
+        dA.copy_from_host(hA.data());
+        dB.copy_from_host(hB.data());
 
         KernelInfo kernels[] = {
             {"1_naive", launch_gemm_naive},
@@ -101,40 +91,29 @@ int main(int argc, char** argv) {
         };
 
         for (auto& ki : kernels) {
-            CUDA_CHECK(cudaMemset(dC, 0, sizeC));
-            ki.launch(dA, dB, dC, M, N, K);
+            dC.zero();
+            ki.launch(dA.get(), dB.get(), dC.get(), M, N, K);
             CUDA_CHECK(cudaDeviceSynchronize());
-            CUDA_CHECK(cudaMemcpy(hC_gpu, dC, sizeC, cudaMemcpyDeviceToHost));
+            dC.copy_to_host(hC_gpu.data());
             printf("%-20s: ", ki.name);
-            verify(hC_ref, hC_gpu, M * N);
+            verify(hC_ref.data(), hC_gpu.data(), M * N);
         }
 
         // cuBLAS
-        cublasHandle_t handle;
-        CUBLAS_CHECK(cublasCreate(&handle));
-        CUDA_CHECK(cudaMemset(dC, 0, sizeC));
-        launch_cublas_gemm(handle, dA, dB, dC, M, N, K);
+        CublasHandle handle;
+        dC.zero();
+        launch_cublas_gemm(handle, dA.get(), dB.get(), dC.get(), M, N, K);
         CUDA_CHECK(cudaDeviceSynchronize());
-        CUDA_CHECK(cudaMemcpy(hC_gpu, dC, sizeC, cudaMemcpyDeviceToHost));
+        dC.copy_to_host(hC_gpu.data());
         printf("%-20s: ", "cuBLAS");
-        verify(hC_ref, hC_gpu, M * N);
-        cublasDestroy(handle);
-
-        CUDA_CHECK(cudaFree(dA));
-        CUDA_CHECK(cudaFree(dB));
-        CUDA_CHECK(cudaFree(dC));
-        free(hA);
-        free(hB);
-        free(hC_ref);
-        free(hC_gpu);
+        verify(hC_ref.data(), hC_gpu.data(), M * N);
     }
 
     // --- Performance benchmark ---
     printf("\n===== Performance Benchmark (GFLOPS) =====\n");
     std::vector<int> sizes = {256, 512, 1024, 2048, 4096, 8192, 16384};
 
-    cublasHandle_t handle;
-    CUBLAS_CHECK(cublasCreate(&handle));
+    CublasHandle handle;
 
     // Print header
     printf("%-20s", "Kernel");
@@ -154,29 +133,15 @@ int main(int argc, char** argv) {
         {"7_warptile", launch_gemm_warptile},
     };
 
-    // Also benchmark cuBLAS
     for (auto& ki : kernels) {
         printf("%-20s", ki.name);
         for (int s : sizes) {
-            float *dA, *dB, *dC;
-            size_t sA = s * s * sizeof(float);
-            CUDA_CHECK(cudaMalloc(&dA, sA));
-            CUDA_CHECK(cudaMalloc(&dB, sA));
-            CUDA_CHECK(cudaMalloc(&dC, sA));
+            DeviceMatrix dA(s, s), dB(s, s), dC(s, s);
+            dA.init_random(42);
+            dB.init_random(42);
 
-            // Init on device (just random, correctness already verified)
-            float* h = (float*)malloc(sA);
-            init_matrix(h, s, s, 42);
-            CUDA_CHECK(cudaMemcpy(dA, h, sA, cudaMemcpyHostToDevice));
-            CUDA_CHECK(cudaMemcpy(dB, h, sA, cudaMemcpyHostToDevice));
-            free(h);
-
-            double gflops = benchmark_kernel(ki.launch, dA, dB, dC, s, s, s);
+            double gflops = benchmark_kernel(ki.launch, dA.get(), dB.get(), dC.get(), s, s, s);
             printf("  %5.0f", gflops);
-
-            CUDA_CHECK(cudaFree(dA));
-            CUDA_CHECK(cudaFree(dB));
-            CUDA_CHECK(cudaFree(dC));
         }
         printf("\n");
     }
@@ -184,25 +149,15 @@ int main(int argc, char** argv) {
     // cuBLAS row
     printf("%-20s", "cuBLAS");
     for (int s : sizes) {
-        float *dA, *dB, *dC;
-        size_t sA = s * s * sizeof(float);
-        CUDA_CHECK(cudaMalloc(&dA, sA));
-        CUDA_CHECK(cudaMalloc(&dB, sA));
-        CUDA_CHECK(cudaMalloc(&dC, sA));
-        float* h = (float*)malloc(sA);
-        init_matrix(h, s, s, 42);
-        CUDA_CHECK(cudaMemcpy(dA, h, sA, cudaMemcpyHostToDevice));
-        CUDA_CHECK(cudaMemcpy(dB, h, sA, cudaMemcpyHostToDevice));
-        free(h);
-        double gflops = benchmark_cublas(handle, dA, dB, dC, s, s, s);
+        DeviceMatrix dA(s, s), dB(s, s), dC(s, s);
+        dA.init_random(42);
+        dB.init_random(42);
+
+        double gflops = benchmark_cublas(handle, dA.get(), dB.get(), dC.get(), s, s, s);
         printf("  %5.0f", gflops);
-        CUDA_CHECK(cudaFree(dA));
-        CUDA_CHECK(cudaFree(dB));
-        CUDA_CHECK(cudaFree(dC));
     }
     printf("\n");
 
-    cublasDestroy(handle);
     printf("\nDone.\n");
     return 0;
 }

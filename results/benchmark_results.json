@@ -13,71 +13,89 @@
     },
     "performance": {
       "1_naive": {
-        "256": 2295.0,
-        "512": 5588.0,
-        "1024": 6050.0,
+        "256": 2343.0,
+        "512": 5604.0,
+        "1024": 6052.0,
         "2048": 6195.0,
-        "4096": 6326.0
+        "4096": 6325.0,
+        "8192": 5890.0,
+        "16384": 5792.0
       },
       "2_coalesced": {
-        "256": 2296.0,
-        "512": 5548.0,
-        "1024": 6043.0,
-        "2048": 6223.0,
-        "4096": 6326.0
+        "256": 2312.0,
+        "512": 5593.0,
+        "1024": 6053.0,
+        "2048": 6194.0,
+        "4096": 6328.0,
+        "8192": 5891.0,
+        "16384": 5792.0
       },
       "2_uncoalesced": {
         "256": 236.0,
         "512": 482.0,
         "1024": 486.0,
         "2048": 487.0,
-        "4096": 498.0
+        "4096": 498.0,
+        "8192": 501.0,
+        "16384": 501.0
       },
       "3_smem": {
-        "256": 3071.0,
-        "512": 8011.0,
-        "1024": 9037.0,
-        "2048": 9228.0,
-        "4096": 9044.0
+        "256": 3081.0,
+        "512": 8050.0,
+        "1024": 9043.0,
+        "2048": 9236.0,
+        "4096": 9048.0,
+        "8192": 9107.0,
+        "16384": 9045.0
       },
       "4_1d_blocktile": {
-        "256": 1477.0,
-        "512": 6241.0,
-        "1024": 17589.0,
-        "2048": 17528.0,
-        "4096": 17034.0
+        "256": 1482.0,
+        "512": 6266.0,
+        "1024": 17615.0,
+        "2048": 17536.0,
+        "4096": 17025.0,
+        "8192": 16881.0,
+        "16384": 16610.0
       },
       "5_2d_blocktile": {
         "256": 642.0,
-        "512": 2724.0,
-        "1024": 12125.0,
-        "2048": 21389.0,
-        "4096": 22044.0
+        "512": 2732.0,
+        "1024": 12199.0,
+        "2048": 21378.0,
+        "4096": 22042.0,
+        "8192": 22435.0,
+        "16384": 22302.0
       },
       "6_vectorized": {
         "256": 681.0,
-        "512": 2845.0,
-        "1024": 11653.0,
-        "2048": 32333.0,
-        "4096": 32612.0
+        "512": 2843.0,
+        "1024": 11673.0,
+        "2048": 32415.0,
+        "4096": 32554.0,
+        "8192": 32054.0,
+        "16384": 31100.0
       },
       "7_warptile": {
-        "256": 670.0,
-        "512": 2854.0,
-        "1024": 12776.0,
-        "2048": 29824.0,
-        "4096": 31265.0
+        "256": 671.0,
+        "512": 2862.0,
+        "1024": 12794.0,
+        "2048": 29897.0,
+        "4096": 31263.0,
+        "8192": 31923.0,
+        "16384": 32847.0
       },
       "cuBLAS": {
-        "256": 2564.0,
-        "512": 17120.0,
-        "1024": 37366.0,
-        "2048": 50260.0,
-        "4096": 51712.0
+        "256": 2519.0,
+        "512": 17250.0,
+        "1024": 37539.0,
+        "2048": 50359.0,
+        "4096": 51719.0,
+        "8192": 51674.0,
+        "16384": 53304.0
       }
     },
-    "raw": "=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Correctness Verification (M=N=K=256) =====\n1_naive             :   PASS (max_diff=0.000007)\n2_coalesced         :   PASS (max_diff=0.000007)\n2_uncoalesced       :   PASS (max_diff=0.000007)\n3_smem              :   PASS (max_diff=0.000007)\n4_1d_blocktile      :   PASS (max_diff=0.000007)\n5_2d_blocktile      :   PASS (max_diff=0.000007)\n6_vectorized        :   PASS (max_diff=0.000007)\n7_warptile          :   PASS (max_diff=0.000007)\ncuBLAS              :   PASS (max_diff=0.000013)\n\n===== Performance Benchmark (GFLOPS) =====\nKernel                  256    512   1024   2048   4096\n-------------------------------------------------------\n1_naive                2295   5588   6050   6195   6326\n2_coalesced            2296   5548   6043   6223   6326\n2_uncoalesced           236    482    486    487    498\n3_smem                 3071   8011   9037   9228   9044\n4_1d_blocktile         1477   6241  17589  17528  17034\n5_2d_blocktile          642   2724  12125  21389  22044\n6_vectorized            681   2845  11653  32333  32612\n7_warptile              670   2854  12776  29824  31265\ncuBLAS                 2564  17120  37366  50260  51712\n\nDone.\n",
-    "elapsed_s": 11.18
+    "raw": "=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Correctness Verification (M=N=K=256) =====\n1_naive             :   PASS (max_diff=0.000007)\n2_coalesced         :   PASS (max_diff=0.000007)\n2_uncoalesced       :   PASS (max_diff=0.000007)\n3_smem              :   PASS (max_diff=0.000007)\n4_1d_blocktile      :   PASS (max_diff=0.000007)\n5_2d_blocktile      :   PASS (max_diff=0.000007)\n6_vectorized        :   PASS (max_diff=0.000007)\n7_warptile          :   PASS (max_diff=0.000007)\ncuBLAS              :   PASS (max_diff=0.000013)\n\n===== Performance Benchmark (GFLOPS) =====\nKernel                  256    512   1024   2048   4096   8192  16384\n---------------------------------------------------------------------\n1_naive                2343   5604   6052   6195   6325   5890   5792\n2_coalesced            2312   5593   6053   6194   6328   5891   5792\n2_uncoalesced           236    482    486    487    498    501    501\n3_smem                 3081   8050   9043   9236   9048   9107   9045\n4_1d_blocktile         1482   6266  17615  17536  17025  16881  16610\n5_2d_blocktile          642   2732  12199  21378  22042  22435  22302\n6_vectorized            681   2843  11673  32415  32554  32054  31100\n7_warptile              671   2862  12794  29897  31263  31923  32847\ncuBLAS                 2519  17250  37539  50359  51719  51674  53304\n\nDone.\n",
+    "elapsed_s": 415.61
   },
   "multi_gpu": {
     "exp1": {
@@ -88,120 +106,200 @@
           "N": 2048,
           "K": 2048,
           "GPUs": 1,
-          "GEMM": 0.455,
+          "GEMM": 0.448,
           "Comm": 0.0,
-          "Total": 0.434,
-          "GFLOPS": 39550.8
+          "Total": 0.445,
+          "GFLOPS": 38600.0
         },
         {
           "M": 4096,
           "N": 4096,
           "K": 4096,
           "GPUs": 1,
-          "GEMM": 2.735,
+          "GEMM": 7.602,
           "Comm": 0.0,
-          "Total": 2.786,
-          "GFLOPS": 49330.2
+          "Total": 2.78,
+          "GFLOPS": 49430.4
         },
         {
           "M": 8192,
           "N": 8192,
           "K": 8192,
           "GPUs": 1,
-          "GEMM": 21.424,
+          "GEMM": 23.612,
           "Comm": 0.0,
-          "Total": 21.526,
-          "GFLOPS": 51077.6
+          "Total": 21.553,
+          "GFLOPS": 51013.8
+        },
+        {
+          "M": 16384,
+          "N": 16384,
+          "K": 16384,
+          "GPUs": 1,
+          "GEMM": 164.887,
+          "Comm": 0.0,
+          "Total": 165.522,
+          "GFLOPS": 53141.6
+        },
+        {
+          "M": 32768,
+          "N": 32768,
+          "K": 32768,
+          "GPUs": 1,
+          "GEMM": 1321.901,
+          "Comm": 0.0,
+          "Total": 1331.338,
+          "GFLOPS": 52855.7
         },
         {
           "M": 2048,
           "N": 2048,
           "K": 2048,
           "GPUs": 2,
-          "GEMM": 0.313,
-          "Comm": 0.219,
-          "Total": 0.361,
-          "GFLOPS": 47532.9
+          "GEMM": 0.321,
+          "Comm": 0.175,
+          "Total": 0.371,
+          "GFLOPS": 46292.2
         },
         {
           "M": 4096,
           "N": 4096,
           "K": 4096,
           "GPUs": 2,
-          "GEMM": 1.481,
-          "Comm": 0.289,
-          "Total": 1.585,
-          "GFLOPS": 86711.9
+          "GEMM": 1.469,
+          "Comm": 0.275,
+          "Total": 1.586,
+          "GFLOPS": 86648.1
         },
         {
           "M": 8192,
           "N": 8192,
           "K": 8192,
           "GPUs": 2,
-          "GEMM": 10.879,
-          "Comm": 0.657,
-          "Total": 11.429,
-          "GFLOPS": 96203.2
+          "GEMM": 10.854,
+          "Comm": 0.678,
+          "Total": 11.403,
+          "GFLOPS": 96420.8
+        },
+        {
+          "M": 16384,
+          "N": 16384,
+          "K": 16384,
+          "GPUs": 2,
+          "GEMM": 82.062,
+          "Comm": 2.093,
+          "Total": 86.423,
+          "GFLOPS": 101779.7
+        },
+        {
+          "M": 32768,
+          "N": 32768,
+          "K": 32768,
+          "GPUs": 2,
+          "GEMM": 660.869,
+          "Comm": 7.634,
+          "Total": 672.288,
+          "GFLOPS": 104670.6
         },
         {
           "M": 2048,
           "N": 2048,
           "K": 2048,
           "GPUs": 4,
-          "GEMM": 0.27,
-          "Comm": 0.22,
-          "Total": 0.308,
-          "GFLOPS": 55742.2
+          "GEMM": 0.289,
+          "Comm": 0.221,
+          "Total": 0.317,
+          "GFLOPS": 54271.5
         },
         {
           "M": 4096,
           "N": 4096,
           "K": 4096,
           "GPUs": 4,
-          "GEMM": 0.866,
-          "Comm": 0.346,
-          "Total": 1.017,
-          "GFLOPS": 135105.9
+          "GEMM": 0.875,
+          "Comm": 0.361,
+          "Total": 1.044,
+          "GFLOPS": 131634.5
         },
         {
           "M": 8192,
           "N": 8192,
           "K": 8192,
           "GPUs": 4,
-          "GEMM": 5.511,
-          "Comm": 0.806,
-          "Total": 7.513,
-          "GFLOPS": 146356.9
+          "GEMM": 5.49,
+          "Comm": 0.83,
+          "Total": 6.135,
+          "GFLOPS": 179230.1
+        },
+        {
+          "M": 16384,
+          "N": 16384,
+          "K": 16384,
+          "GPUs": 4,
+          "GEMM": 41.766,
+          "Comm": 2.594,
+          "Total": 45.583,
+          "GFLOPS": 192970.0
+        },
+        {
+          "M": 32768,
+          "N": 32768,
+          "K": 32768,
+          "GPUs": 4,
+          "GEMM": 333.505,
+          "Comm": 9.703,
+          "Total": 341.992,
+          "GFLOPS": 205761.2
         },
         {
           "M": 2048,
           "N": 2048,
           "K": 2048,
           "GPUs": 8,
-          "GEMM": 0.499,
-          "Comm": 0.471,
-          "Total": 0.539,
-          "GFLOPS": 31862.8
+          "GEMM": 0.493,
+          "Comm": 0.553,
+          "Total": 0.54,
+          "GFLOPS": 31840.8
         },
         {
           "M": 4096,
           "N": 4096,
           "K": 4096,
           "GPUs": 8,
-          "GEMM": 0.796,
-          "Comm": 0.607,
-          "Total": 0.981,
-          "GFLOPS": 140068.6
+          "GEMM": 0.787,
+          "Comm": 0.609,
+          "Total": 0.99,
+          "GFLOPS": 138796.3
         },
         {
           "M": 8192,
           "N": 8192,
           "K": 8192,
           "GPUs": 8,
-          "GEMM": 3.075,
-          "Comm": 1.148,
-          "Total": 3.786,
-          "GFLOPS": 290408.2
+          "GEMM": 3.086,
+          "Comm": 1.146,
+          "Total": 5.209,
+          "GFLOPS": 211081.4
+        },
+        {
+          "M": 16384,
+          "N": 16384,
+          "K": 16384,
+          "GPUs": 8,
+          "GEMM": 21.564,
+          "Comm": 3.105,
+          "Total": 24.24,
+          "GFLOPS": 362879.6
+        },
+        {
+          "M": 32768,
+          "N": 32768,
+          "K": 32768,
+          "GPUs": 8,
+          "GEMM": 166.123,
+          "Comm": 10.938,
+          "Total": 176.013,
+          "GFLOPS": 399793.0
         }
       ]
     },
@@ -213,40 +311,40 @@
           "N_tot": 2048,
           "K": 2048,
           "GPUs": 1,
-          "GEMM": 0.428,
+          "GEMM": 0.441,
           "Comm": 0.0,
-          "Total": 0.435,
-          "GFLOPS": 39456.8
+          "Total": 0.443,
+          "GFLOPS": 38764.3
         },
         {
           "M": 2048,
           "N_tot": 4096,
           "K": 2048,
           "GPUs": 2,
-          "GEMM": 0.456,
+          "GEMM": 0.47,
           "Comm": 0.201,
-          "Total": 0.54,
-          "GFLOPS": 63631.6
+          "Total": 0.544,
+          "GFLOPS": 63180.2
         },
         {
           "M": 2048,
           "N_tot": 8192,
           "K": 2048,
           "GPUs": 4,
-          "GEMM": 0.51,
-          "Comm": 0.341,
-          "Total": 0.675,
-          "GFLOPS": 101874.1
+          "GEMM": 0.521,
+          "Comm": 0.36,
+          "Total": 0.678,
+          "GFLOPS": 101320.2
         },
         {
           "M": 2048,
           "N_tot": 16384,
           "K": 2048,
           "GPUs": 8,
-          "GEMM": 0.761,
-          "Comm": 0.771,
-          "Total": 1.125,
-          "GFLOPS": 122174.1
+          "GEMM": 0.74,
+          "Comm": 0.777,
+          "Total": 1.13,
+          "GFLOPS": 121658.6
         }
       ]
     },
@@ -255,21 +353,33 @@
       "data": [
         {
           "Size": 2048,
-          "GEMM": 0.495,
-          "Comm": 0.462,
-          "Ratio": 0.93
+          "GEMM": 0.475,
+          "Comm": 0.471,
+          "Ratio": 0.99
         },
         {
           "Size": 4096,
-          "GEMM": 0.775,
-          "Comm": 0.598,
-          "Ratio": 0.77
+          "GEMM": 0.784,
+          "Comm": 0.614,
+          "Ratio": 0.78
         },
         {
           "Size": 8192,
-          "GEMM": 3.074,
-          "Comm": 1.116,
+          "GEMM": 3.08,
+          "Comm": 1.121,
           "Ratio": 0.36
+        },
+        {
+          "Size": 16384,
+          "GEMM": 21.576,
+          "Comm": 3.109,
+          "Ratio": 0.14
+        },
+        {
+          "Size": 32768,
+          "GEMM": 166.492,
+          "Comm": 10.954,
+          "Ratio": 0.07
         }
       ]
     },
@@ -278,51 +388,51 @@
       "data": [
         {
           "Kernel": "1_naive",
-          "GEMM": 3.148,
-          "Comm": 0.634,
+          "GEMM": 3.146,
+          "Comm": 0.64,
           "Ratio": 0.2
         },
         {
           "Kernel": "2_coalesced",
-          "GEMM": 3.141,
-          "Comm": 0.634,
+          "GEMM": 3.129,
+          "Comm": 0.64,
           "Ratio": 0.2
         },
         {
           "Kernel": "3_smem",
-          "GEMM": 2.256,
-          "Comm": 0.634,
+          "GEMM": 2.254,
+          "Comm": 0.64,
           "Ratio": 0.28
         },
         {
           "Kernel": "4_1d_blocktile",
-          "GEMM": 1.319,
-          "Comm": 0.634,
-          "Ratio": 0.48
+          "GEMM": 1.318,
+          "Comm": 0.64,
+          "Ratio": 0.49
         },
         {
           "Kernel": "5_2d_blocktile",
-          "GEMM": 1.147,
-          "Comm": 0.634,
-          "Ratio": 0.55
+          "GEMM": 1.137,
+          "Comm": 0.64,
+          "Ratio": 0.56
         },
         {
           "Kernel": "6_vectorized",
-          "GEMM": 1.229,
-          "Comm": 0.634,
+          "GEMM": 1.231,
+          "Comm": 0.64,
           "Ratio": 0.52
         },
         {
           "Kernel": "7_warptile",
-          "GEMM": 1.081,
-          "Comm": 0.634,
-          "Ratio": 0.59
+          "GEMM": 1.069,
+          "Comm": 0.64,
+          "Ratio": 0.6
         },
         {
           "Kernel": "cuBLAS",
-          "GEMM": 0.733,
-          "Comm": 0.634,
-          "Ratio": 0.86
+          "GEMM": 0.75,
+          "Comm": 0.64,
+          "Ratio": 0.85
         }
       ]
     },
@@ -334,27 +444,45 @@
           "H": 2048,
           "N": 2048,
           "GPUs": 8,
-          "Fwd": 0.711,
-          "Bwd": 0.773,
-          "Total": 1.485
+          "Fwd": 1.017,
+          "Bwd": 0.841,
+          "Total": 1.858
         },
         {
           "M": 4096,
           "H": 4096,
           "N": 4096,
           "GPUs": 8,
-          "Fwd": 1.517,
-          "Bwd": 2.169,
-          "Total": 3.686
+          "Fwd": 1.524,
+          "Bwd": 2.178,
+          "Total": 3.702
         },
         {
           "M": 8192,
           "H": 8192,
           "N": 8192,
           "GPUs": 8,
-          "Fwd": 6.929,
-          "Bwd": 12.207,
-          "Total": 19.136
+          "Fwd": 7.014,
+          "Bwd": 12.23,
+          "Total": 19.244
+        },
+        {
+          "M": 16384,
+          "H": 16384,
+          "N": 16384,
+          "GPUs": 8,
+          "Fwd": 47.167,
+          "Bwd": 88.17,
+          "Total": 135.336
+        },
+        {
+          "M": 32768,
+          "H": 32768,
+          "N": 32768,
+          "GPUs": 8,
+          "Fwd": 355.995,
+          "Bwd": 689.241,
+          "Total": 1045.237
         }
       ]
     },
@@ -364,34 +492,48 @@
         {
           "Size": 2048,
           "Chunks": 4,
-          "NoOvlp": 0.611,
-          "Overlap": 0.675,
-          "Speedup": 0.91
+          "NoOvlp": 0.698,
+          "Overlap": 0.709,
+          "Speedup": 0.98
         },
         {
           "Size": 4096,
           "Chunks": 4,
-          "NoOvlp": 1.133,
-          "Overlap": 1.193,
-          "Speedup": 0.95
+          "NoOvlp": 1.16,
+          "Overlap": 1.203,
+          "Speedup": 0.96
         },
         {
           "Size": 8192,
           "Chunks": 4,
-          "NoOvlp": 4.256,
-          "Overlap": 4.152,
+          "NoOvlp": 4.286,
+          "Overlap": 4.192,
           "Speedup": 1.02
+        },
+        {
+          "Size": 16384,
+          "Chunks": 4,
+          "NoOvlp": 26.026,
+          "Overlap": 24.565,
+          "Speedup": 1.06
+        },
+        {
+          "Size": 32768,
+          "Chunks": 4,
+          "NoOvlp": 189.141,
+          "Overlap": 179.463,
+          "Speedup": 1.05
         }
       ]
     },
-    "raw": "===== Multi-GPU Tensor Parallel Benchmark =====\nMax GPUs used:      8\nLocal GEMM kernel:  cuBLAS\n\n=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 1: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 2: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 3: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 4: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 5: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 6: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 7: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Exp 1: Strong Scaling — Column Parallel Forward =====\nM      N      K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.455       0.000       0.434   39550.8\n4096   4096   4096   1            2.735       0.000       2.786   49330.2\n8192   8192   8192   1           21.424       0.000      21.526   51077.6\n2048   2048   2048   2            0.313       0.219       0.361   47532.9\n4096   4096   4096   2            1.481       0.289       1.585   86711.9\n8192   8192   8192   2           10.879       0.657      11.429   96203.2\n2048   2048   2048   4            0.270       0.220       0.308   55742.2\n4096   4096   4096   4            0.866       0.346       1.017  135105.9\n8192   8192   8192   4            5.511       0.806       7.513  146356.9\n2048   2048   2048   8            0.499       0.471       0.539   31862.8\n4096   4096   4096   8            0.796       0.607       0.981  140068.6\n8192   8192   8192   8            3.075       1.148       3.786  290408.2\n\n===== Exp 2: Weak Scaling — Fixed M=N_local=K=2048 per GPU =====\nM      N_tot  K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.428       0.000       0.435   39456.8\n2048   4096   2048   2            0.456       0.201       0.540   63631.6\n2048   8192   2048   4            0.510       0.341       0.675  101874.1\n2048   16384  2048   8            0.761       0.771       1.125  122174.1\n\n===== Exp 3: Comm/Compute Ratio vs Matrix Size (8 GPUs) =====\nSize      GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n2048         0.495       0.462      0.93\n4096         0.775       0.598      0.77\n8192         3.074       1.116      0.36\n\n===== Exp 4: Comm/Compute Ratio across Kernels (size=4096, 8 GPUs) =====\nKernel                  GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n1_naive                    3.148       0.634      0.20\n2_coalesced                3.141       0.634      0.20\n3_smem                     2.256       0.634      0.28\n4_1d_blocktile             1.319       0.634      0.48\n5_2d_blocktile             1.147       0.634      0.55\n6_vectorized               1.229       0.634      0.52\n7_warptile                 1.081       0.634      0.59\ncuBLAS                     0.733       0.634      0.86\n\n===== Exp 5: Parallel MLP Forward + Backward (8 GPUs) =====\nM      H      N      GPUs       Fwd(ms)     Bwd(ms)   Total(ms)\n-----------------------------------------------------------\n2048   2048   2048   8            0.711       0.773       1.485\n4096   4096   4096   8            1.517       2.169       3.686\n8192   8192   8192   8            6.929      12.207      19.136\n\n===== Exp 6: Row Parallel — No Overlap vs Overlap (8 GPUs) =====\nSize    Chunks    NoOvlp(ms)  Overlap(ms)   Speedup\n------------------------------------------------------\n2048    4              0.611       0.675      0.91x\n4096    4              1.133       1.193      0.95x\n8192    4              4.256       4.152      1.02x\n\nDone.\n",
-    "elapsed_s": 105.78,
+    "raw": "===== Multi-GPU Tensor Parallel Benchmark =====\nMax GPUs used:      8\nLocal GEMM kernel:  cuBLAS\n\n=== Device 0: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 1: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 2: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 3: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 4: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 5: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 6: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n=== Device 7: NVIDIA H100 80GB HBM3 ===\n  SM count:          132\n  Clock rate:        1980 MHz\n  Memory:            79.3 GB\n  L2 Cache:          51200 KB\n  Shared mem/block:  48 KB\n  Warp size:         32\n  Compute cap:       9.0\n  ~Peak FP32:        33.5 TFLOPS\n\n===== Exp 1: Strong Scaling — Column Parallel Forward =====\nM      N      K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.448       0.000       0.445   38600.0\n4096   4096   4096   1            7.602       0.000       2.780   49430.4\n8192   8192   8192   1           23.612       0.000      21.553   51013.8\n16384  16384  16384  1          164.887       0.000     165.522   53141.6\n32768  32768  32768  1         1321.901       0.000    1331.338   52855.7\n2048   2048   2048   2            0.321       0.175       0.371   46292.2\n4096   4096   4096   2            1.469       0.275       1.586   86648.1\n8192   8192   8192   2           10.854       0.678      11.403   96420.8\n16384  16384  16384  2           82.062       2.093      86.423  101779.7\n32768  32768  32768  2          660.869       7.634     672.288  104670.6\n2048   2048   2048   4            0.289       0.221       0.317   54271.5\n4096   4096   4096   4            0.875       0.361       1.044  131634.5\n8192   8192   8192   4            5.490       0.830       6.135  179230.1\n16384  16384  16384  4           41.766       2.594      45.583  192970.0\n32768  32768  32768  4          333.505       9.703     341.992  205761.2\n2048   2048   2048   8            0.493       0.553       0.540   31840.8\n4096   4096   4096   8            0.787       0.609       0.990  138796.3\n8192   8192   8192   8            3.086       1.146       5.209  211081.4\n16384  16384  16384  8           21.564       3.105      24.240  362879.6\n32768  32768  32768  8          166.123      10.938     176.013  399793.0\n\n===== Exp 2: Weak Scaling — Fixed M=N_local=K=2048 per GPU =====\nM      N_tot  K      GPUs      GEMM(ms)    Comm(ms)   Total(ms)    GFLOPS\n-----------------------------------------------------------------------\n2048   2048   2048   1            0.441       0.000       0.443   38764.3\n2048   4096   2048   2            0.470       0.201       0.544   63180.2\n2048   8192   2048   4            0.521       0.360       0.678  101320.2\n2048   16384  2048   8            0.740       0.777       1.130  121658.6\n\n===== Exp 3: Comm/Compute Ratio vs Matrix Size (8 GPUs) =====\nSize      GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n2048         0.475       0.471      0.99\n4096         0.784       0.614      0.78\n8192         3.080       1.121      0.36\n16384       21.576       3.109      0.14\n32768      166.492      10.954      0.07\n\n===== Exp 4: Comm/Compute Ratio across Kernels (size=4096, 8 GPUs) =====\nKernel                  GEMM(ms)    Comm(ms)     Ratio\n------------------------------------------------------\n1_naive                    3.146       0.640      0.20\n2_coalesced                3.129       0.640      0.20\n3_smem                     2.254       0.640      0.28\n4_1d_blocktile             1.318       0.640      0.49\n5_2d_blocktile             1.137       0.640      0.56\n6_vectorized               1.231       0.640      0.52\n7_warptile                 1.069       0.640      0.60\ncuBLAS                     0.750       0.640      0.85\n\n===== Exp 5: Parallel MLP Forward + Backward (8 GPUs) =====\nM      H      N      GPUs       Fwd(ms)     Bwd(ms)   Total(ms)\n-----------------------------------------------------------\n2048   2048   2048   8            1.017       0.841       1.858\n4096   4096   4096   8            1.524       2.178       3.702\n8192   8192   8192   8            7.014      12.230      19.244\n16384  16384  16384  8           47.167      88.170     135.336\n32768  32768  32768  8          355.995     689.241    1045.237\n\n===== Exp 6: Row Parallel — No Overlap vs Overlap (8 GPUs) =====\nSize    Chunks    NoOvlp(ms)  Overlap(ms)   Speedup\n------------------------------------------------------\n2048    4              0.698       0.709      0.98x\n4096    4              1.160       1.203      0.96x\n8192    4              4.286       4.192      1.02x\n16384   4             26.026      24.565      1.06x\n32768   4            189.141     179.463      1.05x\n\nDone.\n",
+    "elapsed_s": 1558.38,
     "max_gpus": 8,
     "kernel": "cuBLAS"
   },
   "metadata": {
     "gpu": "NVIDIA H100 80GB HBM3, 9.0, 81559 MiB",
     "num_gpus": 8,
-    "timestamp": "2026-04-08T18:27:57"
+    "timestamp": "2026-04-08T19:55:16"
   }
 }
