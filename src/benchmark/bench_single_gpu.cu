@@ -18,9 +18,8 @@
 #include "../utils/device_matrix.cuh"
 
 // Benchmark a kernel: warm up, then average over multiple runs
-double benchmark_kernel(const GemmKernel& kernel,
-                        const float* dA, const float* dB, float* dC, int M, int N, int K,
-                        int warmup = 3, int repeat = 10) {
+double benchmark_kernel(const GemmKernel& kernel, const float* dA, const float* dB, float* dC,
+                        int M, int N, int K, int warmup = 3, int repeat = 10) {
     GpuTimer timer;
 
     for (int i = 0; i < warmup; i++) {

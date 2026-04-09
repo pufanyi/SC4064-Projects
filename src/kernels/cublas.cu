@@ -23,16 +23,15 @@ class CublasKernel : public GemmKernel {
 
     void set_cublas_handle(cublasHandle_t handle) override { g_cublas_handle = handle; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         if (!g_cublas_handle) return;
         float alpha = 1.0f, beta = 0.0f;
         CUBLAS_CHECK(cublasSetStream(g_cublas_handle, stream));
-        CUBLAS_CHECK(cublasSgemm(g_cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N,
-                                 N, M, K, &alpha, B, N, A, K, &beta, C, N));
+        CUBLAS_CHECK(cublasSgemm(g_cublas_handle, CUBLAS_OP_N, CUBLAS_OP_N, N, M, K, &alpha, B, N,
+                                 A, K, &beta, C, N));
     }
 };
-
 
 static int reg = KernelRegistry::add(std::make_unique<CublasKernel>());
 

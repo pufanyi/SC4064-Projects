@@ -49,8 +49,8 @@ class SmemTilingKernel : public GemmKernel {
    public:
     const char* name() const override { return "SmemTiling"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         dim3 block(TILE_SIZE, TILE_SIZE);
         dim3 grid((N + TILE_SIZE - 1) / TILE_SIZE, (M + TILE_SIZE - 1) / TILE_SIZE);
         gemm_smem<<<grid, block, 0, stream>>>(A, B, C, M, N, K);

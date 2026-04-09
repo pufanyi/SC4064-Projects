@@ -45,8 +45,8 @@ class CoalescedKernel : public GemmKernel {
    public:
     const char* name() const override { return "Coalesced"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         dim3 block(BLOCK, BLOCK);
         dim3 grid((N + BLOCK - 1) / BLOCK, (M + BLOCK - 1) / BLOCK);
         gemm_coalesced<<<grid, block, 0, stream>>>(A, B, C, M, N, K);
@@ -57,8 +57,8 @@ class UncoalescedKernel : public GemmKernel {
    public:
     const char* name() const override { return "Uncoalesced"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         dim3 block(BLOCK, BLOCK);
         dim3 grid((M + BLOCK - 1) / BLOCK, (N + BLOCK - 1) / BLOCK);
         gemm_uncoalesced<<<grid, block, 0, stream>>>(A, B, C, M, N, K);

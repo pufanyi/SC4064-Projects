@@ -99,8 +99,8 @@ class BlockTile2DKernel : public GemmKernel {
    public:
     const char* name() const override { return "BlockTile2D"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         constexpr int threads = (BM / TM) * (BN / TN);
         dim3 block(threads);
         dim3 grid((N + BN - 1) / BN, (M + BM - 1) / BM);

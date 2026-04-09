@@ -112,8 +112,8 @@ class WarpTileKernel : public GemmKernel {
    public:
     const char* name() const override { return "WarpTile"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         constexpr int warps = (BM / WM) * (BN / WN);
         constexpr int threads = warps * 32;
         dim3 block(threads);

@@ -76,8 +76,8 @@ class BlockTile1DKernel : public GemmKernel {
    public:
     const char* name() const override { return "BlockTile1D"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         dim3 block(BN, BM / TM);
         dim3 grid((N + BN - 1) / BN, (M + BM - 1) / BM);
         gemm_blocktile_1d<<<grid, block, 0, stream>>>(A, B, C, M, N, K);

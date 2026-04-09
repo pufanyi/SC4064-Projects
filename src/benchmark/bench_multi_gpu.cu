@@ -36,9 +36,7 @@ struct DeviceContext {
     CudaStream compute_stream;
     CudaStream comm_stream;
 
-    explicit DeviceContext(int dev) : device_id(dev) {
-        CUDA_CHECK(cudaSetDevice(dev));
-    }
+    explicit DeviceContext(int dev) : device_id(dev) { CUDA_CHECK(cudaSetDevice(dev)); }
 
     /// Activate this GPU context on the current thread: set device + cuBLAS handle.
     void activate() const {
@@ -143,8 +141,7 @@ struct ColParallelBuffers {
     int device_id;
     DeviceMatrix X, W, Y, Y_full;
 
-    ColParallelBuffers(int gpu_id, int M, int K, int N_local, int N)
-        : device_id(gpu_id) {
+    ColParallelBuffers(int gpu_id, int M, int K, int N_local, int N) : device_id(gpu_id) {
         CUDA_CHECK(cudaSetDevice(gpu_id));
         X = DeviceMatrix(M, K);
         W = DeviceMatrix(K, N_local);
@@ -166,8 +163,7 @@ struct MLPBuffers {
     DeviceMatrix X, W1, W2, Hidden, YPartial, Y;
     DeviceMatrix dY, dW1, dW2, dHidden, dXPartial, dX;
 
-    MLPBuffers(int gpu_id, int M, int K, int H_local, int N)
-        : device_id(gpu_id) {
+    MLPBuffers(int gpu_id, int M, int K, int H_local, int N) : device_id(gpu_id) {
         CUDA_CHECK(cudaSetDevice(gpu_id));
         X = DeviceMatrix(M, K);
         W1 = DeviceMatrix(K, H_local);
@@ -199,8 +195,7 @@ struct RowParallelBuffers {
     DeviceMatrix X, W, Y, YReduced;
     DeviceMatrix YOverlap, YReducedOverlap;
 
-    RowParallelBuffers(int gpu_id, int M, int K_local, int N)
-        : device_id(gpu_id) {
+    RowParallelBuffers(int gpu_id, int M, int K_local, int N) : device_id(gpu_id) {
         CUDA_CHECK(cudaSetDevice(gpu_id));
         X = DeviceMatrix(M, K_local);
         W = DeviceMatrix(K_local, N);
@@ -280,15 +275,14 @@ int main(int argc, char** argv) {
 
             std::vector<ColParallelBuffers> bufs;
             bufs.reserve(active_gpus);
-            for (int g = 0; g < active_gpus; g++)
-                bufs.emplace_back(g, M, K, N_local, N);
+            for (int g = 0; g < active_gpus; g++) bufs.emplace_back(g, M, K, N_local, N);
 
             double gemm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
                 ctx.activate();
 
-                kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                              M, N_local, K, ctx.compute_stream);
+                kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
+                              ctx.compute_stream);
                 ctx.compute_stream.synchronize();
             });
 
@@ -334,14 +328,13 @@ int main(int argc, char** argv) {
 
         std::vector<ColParallelBuffers> bufs;
         bufs.reserve(active_gpus);
-        for (int g = 0; g < active_gpus; g++)
-            bufs.emplace_back(g, M, K, N_local, N_total);
+        for (int g = 0; g < active_gpus; g++) bufs.emplace_back(g, M, K, N_local, N_total);
 
         double gemm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
             ctx.activate();
-            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                          M, N_local, K, ctx.compute_stream);
+            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
+                          ctx.compute_stream);
             ctx.compute_stream.synchronize();
         });
 
@@ -361,14 +354,13 @@ int main(int argc, char** argv) {
             auto& ctx = contexts[g];
             ctx.activate();
             column_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                                    bufs[g].Y_full.get(), M, N_total, K, active_gpus, g,
-                                    ctx.handle, comms.get(active_gpus, g), ctx.compute_stream,
-                                    kernel);
+                                    bufs[g].Y_full.get(), M, N_total, K, active_gpus, g, ctx.handle,
+                                    comms.get(active_gpus, g), ctx.compute_stream, kernel);
             ctx.compute_stream.synchronize();
         });
 
-        printf("%-6d %-6d %-6d %-6d  %10.3f  %10.3f  %10.3f  %8.1f\n", M, N_total, K,
-               active_gpus, gemm_ms, comm_ms, total_ms, gemm_gflops(M, N_total, K, total_ms));
+        printf("%-6d %-6d %-6d %-6d  %10.3f  %10.3f  %10.3f  %8.1f\n", M, N_total, K, active_gpus,
+               gemm_ms, comm_ms, total_ms, gemm_gflops(M, N_total, K, total_ms));
     }
 
     // =====================================================================
@@ -384,14 +376,13 @@ int main(int argc, char** argv) {
 
         std::vector<ColParallelBuffers> bufs;
         bufs.reserve(max_gpus);
-        for (int g = 0; g < max_gpus; g++)
-            bufs.emplace_back(g, M, K, N_local, N);
+        for (int g = 0; g < max_gpus; g++) bufs.emplace_back(g, M, K, N_local, N);
 
         double gemm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
             ctx.activate();
-            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                          M, N_local, K, ctx.compute_stream);
+            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
+                          ctx.compute_stream);
             ctx.compute_stream.synchronize();
         });
 
@@ -421,8 +412,7 @@ int main(int argc, char** argv) {
 
         std::vector<ColParallelBuffers> bufs;
         bufs.reserve(max_gpus);
-        for (int g = 0; g < max_gpus; g++)
-            bufs.emplace_back(g, M, K, N_local, N);
+        for (int g = 0; g < max_gpus; g++) bufs.emplace_back(g, M, K, N_local, N);
 
         double comm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
@@ -439,14 +429,13 @@ int main(int argc, char** argv) {
                 auto& ctx = contexts[g];
                 ctx.activate();
 
-                test_kernel.launch(bufs[g].X.get(), bufs[g].W.get(),
-                                   bufs[g].Y.get(), M, N_local, K,
+                test_kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
                                    ctx.compute_stream);
                 ctx.compute_stream.synchronize();
             });
 
-            printf("%-20s  %10.3f  %10.3f  %8.2f\n", test_kernel.name(), gemm_ms,
-                   comm_ms, comm_ms / gemm_ms);
+            printf("%-20s  %10.3f  %10.3f  %8.2f\n", test_kernel.name(), gemm_ms, comm_ms,
+                   comm_ms / gemm_ms);
         }
     }
 
@@ -464,8 +453,7 @@ int main(int argc, char** argv) {
 
         std::vector<MLPBuffers> bufs;
         bufs.reserve(max_gpus);
-        for (int g = 0; g < max_gpus; g++)
-            bufs.emplace_back(g, M, K, H_local, N);
+        for (int g = 0; g < max_gpus; g++) bufs.emplace_back(g, M, K, H_local, N);
 
         double fwd_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
@@ -482,15 +470,14 @@ int main(int argc, char** argv) {
             ctx.activate();
             parallel_mlp_backward(bufs[g].X.get(), bufs[g].W1.get(), bufs[g].W2.get(),
                                   bufs[g].Hidden.get(), bufs[g].dY.get(), bufs[g].dW1.get(),
-                                  bufs[g].dW2.get(), bufs[g].dHidden.get(),
-                                  bufs[g].dXPartial.get(), bufs[g].dX.get(), M, K, H, N, max_gpus,
-                                  g, ctx.handle, comms.get(max_gpus, g), ctx.compute_stream,
-                                  kernel);
+                                  bufs[g].dW2.get(), bufs[g].dHidden.get(), bufs[g].dXPartial.get(),
+                                  bufs[g].dX.get(), M, K, H, N, max_gpus, g, ctx.handle,
+                                  comms.get(max_gpus, g), ctx.compute_stream, kernel);
             ctx.compute_stream.synchronize();
         });
 
-        printf("%-6d %-6d %-6d %-6d  %10.3f  %10.3f  %10.3f\n", M, H, N, max_gpus, fwd_ms,
-               bwd_ms, fwd_ms + bwd_ms);
+        printf("%-6d %-6d %-6d %-6d  %10.3f  %10.3f  %10.3f\n", M, H, N, max_gpus, fwd_ms, bwd_ms,
+               fwd_ms + bwd_ms);
     }
 
     // =====================================================================
@@ -508,8 +495,7 @@ int main(int argc, char** argv) {
 
         std::vector<RowParallelBuffers> bufs;
         bufs.reserve(max_gpus);
-        for (int g = 0; g < max_gpus; g++)
-            bufs.emplace_back(g, M, K_local, N);
+        for (int g = 0; g < max_gpus; g++) bufs.emplace_back(g, M, K_local, N);
 
         double no_overlap_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];

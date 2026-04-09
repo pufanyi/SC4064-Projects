@@ -19,8 +19,7 @@ class GemmKernel {
     virtual const char* name() const = 0;
 
     /// Launch the kernel: C[M×N] = A[M×K] × B[K×N], row-major.
-    virtual void launch(const float* A, const float* B, float* C,
-                        int M, int N, int K,
+    virtual void launch(const float* A, const float* B, float* C, int M, int N, int K,
                         cudaStream_t stream = 0) const = 0;
 
     /// Whether this kernel requires a cuBLAS handle (default: false).

@@ -30,8 +30,8 @@ class NaiveKernel : public GemmKernel {
    public:
     const char* name() const override { return "Naive"; }
 
-    void launch(const float* A, const float* B, float* C,
-                int M, int N, int K, cudaStream_t stream) const override {
+    void launch(const float* A, const float* B, float* C, int M, int N, int K,
+                cudaStream_t stream) const override {
         constexpr int BLOCK = 32;
         dim3 block(BLOCK, BLOCK);
         dim3 grid((N + BLOCK - 1) / BLOCK, (M + BLOCK - 1) / BLOCK);

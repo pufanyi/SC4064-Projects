@@ -19,11 +19,10 @@
  * with only ONE AllReduce per forward pass and ONE per backward pass.
  */
 
-#include "tensor_parallel.cuh"
-
 #include "../utils/cuda_raii.cuh"
 #include "../utils/cuda_utils.cuh"
 #include "../utils/nccl_utils.cuh"
+#include "tensor_parallel.cuh"
 
 // ============================================================================
 // Helpers
@@ -34,8 +33,8 @@ static void gpu_transpose(cublasHandle_t handle, const float* A, float* B, int M
                           cudaStream_t stream) {
     float alpha = 1.0f, beta = 0.0f;
     CUBLAS_CHECK(cublasSetStream(handle, stream));
-    CUBLAS_CHECK(cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N,
-                             &alpha, A, N, &beta, B, M, B, M));
+    CUBLAS_CHECK(
+        cublasSgeam(handle, CUBLAS_OP_T, CUBLAS_OP_N, M, N, &alpha, A, N, &beta, B, M, B, M));
 }
 
 // Local GEMM via kernel abstraction
@@ -46,17 +45,14 @@ static void local_gemm(const float* A, const float* B, float* C, int M, int N, i
 
 // Gradient GEMM helper: handles the cuBLAS transpose path vs custom kernel path.
 // Computes C[M×N] = A^T[M×K_orig] @ B[K_orig×N]  (i.e., A is K_orig×M, transposed)
-static void grad_gemm_at_b(const float* A, const float* B, float* C,
-                           int M, int N, int K_orig,
-                           const GemmKernel& kernel, cublasHandle_t handle,
-                           cudaStream_t stream) {
+static void grad_gemm_at_b(const float* A, const float* B, float* C, int M, int N, int K_orig,
+                           const GemmKernel& kernel, cublasHandle_t handle, cudaStream_t stream) {
     if (kernel.needs_cublas()) {
         float alpha = 1.0f, beta = 0.0f;
         CUBLAS_CHECK(cublasSetStream(handle, stream));
         // C = A^T @ B  in row-major via col-major trick
-        CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T,
-                                 N, M, K_orig, &alpha,
-                                 B, N, A, M, &beta, C, N));
+        CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_N, CUBLAS_OP_T, N, M, K_orig, &alpha, B, N, A, M,
+                                 &beta, C, N));
     } else {
         CudaMemory<float> A_T(M * K_orig);
         gpu_transpose(handle, A, A_T.get(), K_orig, M, stream);
@@ -66,16 +62,14 @@ static void grad_gemm_at_b(const float* A, const float* B, float* C,
 }
 
 // Gradient GEMM helper: C[M×N] = A[M×K] @ B^T[K×N_orig]  (B is N_orig×K, transposed)
-static void grad_gemm_a_bt(const float* A, const float* B, float* C,
-                           int M, int N, int K,
-                           const GemmKernel& kernel, cublasHandle_t handle,
-                           float* B_T_workspace, cudaStream_t stream) {
+static void grad_gemm_a_bt(const float* A, const float* B, float* C, int M, int N, int K,
+                           const GemmKernel& kernel, cublasHandle_t handle, float* B_T_workspace,
+                           cudaStream_t stream) {
     if (kernel.needs_cublas()) {
         float alpha = 1.0f, beta = 0.0f;
         CUBLAS_CHECK(cublasSetStream(handle, stream));
-        CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N,
-                                 N, M, K, &alpha,
-                                 B, K, A, K, &beta, C, N));
+        CUBLAS_CHECK(cublasSgemm(handle, CUBLAS_OP_T, CUBLAS_OP_N, N, M, K, &alpha, B, K, A, K,
+                                 &beta, C, N));
     } else {
         gpu_transpose(handle, B, B_T_workspace, N, K, stream);
         CUDA_CHECK(cudaStreamSynchronize(stream));
@@ -135,12 +129,11 @@ void column_parallel_backward(const float* d_X, const float* d_W_shard, const fl
     int N_local = N / num_gpus;
 
     // dW_i = X^T @ dY_i  [K, N/p]
-    grad_gemm_at_b(d_X, d_dY_local, d_dW_shard, K, N_local, M,
-                   kernel, handle, stream);
+    grad_gemm_at_b(d_X, d_dY_local, d_dW_shard, K, N_local, M, kernel, handle, stream);
 
     // dX_partial = dY_i @ W_i^T  [M, K]
-    grad_gemm_a_bt(d_dY_local, d_W_shard, d_dX_partial, M, K, N_local,
-                   kernel, handle, d_W_shard_T, stream);
+    grad_gemm_a_bt(d_dY_local, d_W_shard, d_dX_partial, M, K, N_local, kernel, handle, d_W_shard_T,
+                   stream);
 
     // AllReduce: dX = sum(dX_partial)
     if (num_gpus == 1) {
@@ -160,12 +153,10 @@ void row_parallel_backward(const float* d_X_shard, const float* d_W_shard, const
     int K_local = K / num_gpus;
 
     // dW_i = X_i^T @ dY  [K/p, N]
-    grad_gemm_at_b(d_X_shard, d_dY, d_dW_shard, K_local, N, M,
-                   kernel, handle, stream);
+    grad_gemm_at_b(d_X_shard, d_dY, d_dW_shard, K_local, N, M, kernel, handle, stream);
 
     // dX_i = dY @ W_i^T  [M, K/p]
-    grad_gemm_a_bt(d_dY, d_W_shard, d_dX_shard, M, K_local, N,
-                   kernel, handle, d_W_shard_T, stream);
+    grad_gemm_a_bt(d_dY, d_W_shard, d_dX_shard, M, K_local, N, kernel, handle, d_W_shard_T, stream);
 }
 
 // ============================================================================
@@ -200,23 +191,21 @@ void parallel_mlp_backward(const float* d_X, const float* d_W1_shard, const floa
     int H_local = H / num_gpus;
 
     // Row backward (W2): dW2_i = hidden_i^T @ dY, d_hidden_i = dY @ W2_i^T
-    grad_gemm_at_b(d_hidden, d_dY, d_dW2_shard, H_local, N, M,
-                   kernel, handle, stream);
+    grad_gemm_at_b(d_hidden, d_dY, d_dW2_shard, H_local, N, M, kernel, handle, stream);
 
     {
         CudaMemory<float> d_W2_T(N * H_local);
-        grad_gemm_a_bt(d_dY, d_W2_shard, d_d_hidden, M, H_local, N,
-                       kernel, handle, d_W2_T.get(), stream);
+        grad_gemm_a_bt(d_dY, d_W2_shard, d_d_hidden, M, H_local, N, kernel, handle, d_W2_T.get(),
+                       stream);
     }
 
     // Column backward (W1): dW1_i = X^T @ d_hidden_i, dX_partial = d_hidden_i @ W1_i^T
-    grad_gemm_at_b(d_X, d_d_hidden, d_dW1_shard, K, H_local, M,
-                   kernel, handle, stream);
+    grad_gemm_at_b(d_X, d_d_hidden, d_dW1_shard, K, H_local, M, kernel, handle, stream);
 
     {
         CudaMemory<float> d_W1_T(H_local * K);
-        grad_gemm_a_bt(d_d_hidden, d_W1_shard, d_dX_partial, M, K, H_local,
-                       kernel, handle, d_W1_T.get(), stream);
+        grad_gemm_a_bt(d_d_hidden, d_W1_shard, d_dX_partial, M, K, H_local, kernel, handle,
+                       d_W1_T.get(), stream);
     }
 
     // AllReduce: dX = sum(dX_partial)
