@@ -420,6 +420,7 @@ The codebase is organized into three loosely-coupled layers: a *kernel abstracti
 All GEMM kernels---from the naive baseline to cuBLAS---implement a common abstract interface:
 
 #figure(
+  kind: image,
   block(width: 85%, inset: 10pt)[
     #set text(size: 8.5pt)
 
@@ -502,6 +503,7 @@ All GPU resources are managed via move-only RAII wrappers, ensuring deterministi
 == Architecture Overview
 
 #figure(
+  kind: image,
   block(width: 95%, inset: 10pt)[
     #set text(size: 8.5pt)
     #align(center)[
@@ -571,5 +573,4 @@ These results underscore that efficient distributed deep learning requires *co-o
 // References
 // ═════════════════════════════════════════════════════════════════════
 
-#pagebreak()
 #bibliography("references.bib", style: "ieee")
