@@ -52,7 +52,7 @@
 #set math.equation(numbering: "(1)")
 
 // ── Figure / table styling ──────────────────────────────────────────
-#show figure: set figure(scope: "parent", placement: auto)
+#show figure.where(kind: table): set figure(scope: "parent", placement: auto)
 #show figure: set block(above: 1em, below: 1em)
 #show figure.caption: set text(size: 8.5pt)
 
@@ -66,10 +66,12 @@
 )
 
 // ── Helper ──────────────────────────────────────────────────────────
-#let fig(path, caption, width: 80%) = {
+#let fig(path, caption, width: 95%, scope: "column") = {
   figure(
     image(path, width: width),
     caption: caption,
+    scope: scope,
+    placement: auto,
   )
 }
 
@@ -292,6 +294,8 @@ All kernels pass correctness verification against a CPU reference at $M = N = K 
 #fig(
   "../results/figures/kernel_gflops.pdf",
   [GFLOPS comparison across all kernel optimization stages and matrix sizes. cuBLAS serves as the reference. Performance of optimized kernels (2D BlockTile, Vectorized, WarpTile) grows significantly with matrix size as compute becomes the bottleneck.],
+  scope: "parent",
+  width: 80%,
 ) <fig:gflops>
 
 @fig:gflops shows the performance progression. Key observations:
@@ -307,7 +311,6 @@ All kernels pass correctness verification against a CPU reference at $M = N = K 
 #fig(
   "../results/figures/cublas_percentage.pdf",
   [Each kernel's throughput as a percentage of cuBLAS. The Vectorized kernel reaches 63% of cuBLAS at $N = 4096$. The gap narrows significantly from Kernel 1 (12%) to Kernel 6 (63%).],
-  width: 75%,
 ) <fig:pct>
 
 @fig:pct shows the relative performance trajectory. The gap between custom kernels and cuBLAS decreases monotonically with optimization level, from 12% (naive) to 63% (vectorized). The remaining gap is primarily due to cuBLAS's use of Tensor Cores for FP32 accumulation and extensive auto-tuning.
@@ -315,7 +318,6 @@ All kernels pass correctness verification against a CPU reference at $M = N = K 
 #fig(
   "../results/figures/roofline.pdf",
   [Roofline analysis at $N = 4096$. Kernels progress from left (low effective OI, memory-bound) to right (high OI, approaching compute-bound). The ridge point at 10 FLOP/byte separates the two regimes. cuBLAS crosses into the compute-bound region.],
-  width: 75%,
 ) <fig:roofline>
 
 The roofline analysis (@fig:roofline) provides a unified view. Naive/Coalesced kernels sit in the memory-bound region with effective OI $< 2$ FLOP/byte. Each optimization stage moves kernels rightward: shared memory tiling ($tilde 2.7$), block tiling ($tilde 5$--$6.6$), vectorized loads ($tilde 9.7$). cuBLAS crosses the ridge point ($tilde 15.4$ FLOP/byte), entering the compute-bound regime.
@@ -338,7 +340,6 @@ All multi-GPU experiments use 8$times$H100 GPUs connected via NVLink. For backwa
 #fig(
   "../results/figures/strong_scaling.pdf",
   [Strong scaling: total wall-clock time vs. number of GPUs for five matrix sizes up to $32768$. Dashed lines show ideal linear speedup. Larger matrices scale significantly better.],
-  width: 72%,
 ) <fig:strong>
 
 @fig:strong shows that the $N = 32768$ workload scales from 1331 ms (1 GPU) to 176 ms (8 GPUs)---a $7.6 times$ speedup, or *94.5% parallel efficiency*, achieving 400 TFLOPS aggregate throughput. Even $N = 8192$ achieves a respectable $4.1 times$ speedup. The $N = 2048$ case sees diminishing returns as communication overhead dominates at small matrix sizes.
@@ -346,7 +347,6 @@ All multi-GPU experiments use 8$times$H100 GPUs connected via NVLink. For backwa
 #fig(
   "../results/figures/strong_scaling_efficiency.pdf",
   [Parallel efficiency $eta = T_1 / (p dot T_p)$ for strong scaling. At $N = 32768$, efficiency remains above 94% at 8 GPUs. Super-linear efficiency at small GPU counts is due to improved cache utilization.],
-  width: 72%,
 ) <fig:efficiency>
 
 @fig:efficiency shows that large matrices maintain near-ideal efficiency. At $N = 32768$, efficiency stays above 94% even at 8 GPUs because communication ($tilde 11$ ms) is dwarfed by compute ($tilde 166$ ms). Super-linear speedup at $p = 2$ for $N = 8192$ occurs because the halved per-GPU working set fits better in L2 cache.
@@ -356,6 +356,8 @@ All multi-GPU experiments use 8$times$H100 GPUs connected via NVLink. For backwa
 #fig(
   "../results/figures/weak_scaling.pdf",
   [Weak scaling with fixed $2048 times 2048$ local workload per GPU. Left: total time increases modestly from 0.44 ms to 1.12 ms. Right: aggregate throughput scales from 39.5 to 123.2 TFLOPS ($3.1 times$ at $8 times$ GPUs).],
+  scope: "parent",
+  width: 80%,
 ) <fig:weak>
 
 Under weak scaling (@fig:weak), total time increases from 0.44 ms (1 GPU) to 1.12 ms (8 GPUs)---a $2.6 times$ overhead for $8 times$ the total work. Aggregate throughput reaches 123.2 TFLOPS, which is $3.1 times$ the single-GPU baseline. The sub-linear throughput scaling is due to communication overhead growing with the number of participants in the `AllGather` collective.
@@ -367,7 +369,6 @@ This is the central experiment of the project, directly addressing the question:
 #fig(
   "../results/figures/comm_compute_ratio_size.pdf",
   [GEMM time vs. communication time at different matrix sizes (8 GPUs, cuBLAS kernel). The ratio decreases from 0.99 at $N = 2048$ to 0.07 at $N = 32768$ as compute grows $O(N^3)$ while communication grows $O(N^2)$.],
-  width: 72%,
 ) <fig:ratio_size>
 
 @fig:ratio_size demonstrates the cubic-vs-quadratic scaling law. At $N = 2048$, communication (0.47 ms) nearly equals compute (0.48 ms), yielding a ratio of 0.99. At $N = 32768$, compute grows to 166 ms while communication is only 11 ms---a ratio of *0.07*. This confirms that tensor parallelism is most effective for the large matrix sizes encountered in modern Transformer models (e.g., hidden dimension 12288--16384 in GPT-3/LLaMA).
@@ -375,6 +376,8 @@ This is the central experiment of the project, directly addressing the question:
 #fig(
   "../results/figures/comm_compute_ratio_kernel.pdf",
   [Left: absolute GEMM and communication time per kernel at $N = 4096$ on 8 GPUs. Communication time is constant ($tilde 0.64$ ms) across kernels. Right: the communication-to-compute ratio rises monotonically from 0.20 (naive) to 0.85 (cuBLAS) as kernels get faster.],
+  scope: "parent",
+  width: 80%,
 ) <fig:ratio_kernel>
 
 @fig:ratio_kernel is the *key result*. Communication time is constant across kernels ($tilde 0.64$ ms)---it depends only on data volume and interconnect bandwidth. As local GEMM time decreases from 3.15 ms (naive) to 0.75 ms (cuBLAS), the ratio rises from 0.20 to 0.85. This means:
@@ -389,7 +392,6 @@ This crossover is the fundamental tension in distributed deep learning: local co
 #fig(
   "../results/figures/mlp_fwd_bwd.pdf",
   [Parallel MLP block timing on 8 GPUs. Backward pass takes 1.1$times$--1.7$times$ the forward pass, consistent with the additional GEMM operations for weight and input gradients.],
-  width: 62%,
 ) <fig:mlp>
 
 @fig:mlp shows the MLP block timing. The backward-to-forward ratio increases with matrix size (1.1$times$ at $N = 2048$ to 1.7$times$ at $N = 8192$), consistent with the backward pass requiring three GEMM operations per layer versus one in the forward pass, with the additional operations becoming more dominant as the compute-to-overhead ratio increases.
@@ -399,7 +401,6 @@ This crossover is the fundamental tension in distributed deep learning: local co
 #fig(
   "../results/figures/overlap_comparison.pdf",
   [Row-parallel forward with and without communication-compute overlap (4 chunks). Overlap provides marginal speedup ($1.02 times$) only at $N = 8192$ and introduces overhead at smaller sizes.],
-  width: 62%,
 ) <fig:overlap>
 
 The overlap experiment (@fig:overlap) splits the output along the M dimension into 4 chunks, pipelining each chunk's `AllReduce` with the next chunk's GEMM on separate CUDA streams. Results show:
@@ -421,6 +422,8 @@ All GEMM kernels---from the naive baseline to cuBLAS---implement a common abstra
 
 #figure(
   kind: image,
+  scope: "parent",
+  placement: auto,
   block(width: 85%, inset: 10pt)[
     #set text(size: 8.5pt)
 
@@ -504,6 +507,8 @@ All GPU resources are managed via move-only RAII wrappers, ensuring deterministi
 
 #figure(
   kind: image,
+  scope: "parent",
+  placement: auto,
   block(width: 95%, inset: 10pt)[
     #set text(size: 8.5pt)
     #align(center)[
