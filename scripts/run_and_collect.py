@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Run single-GPU and multi-GPU benchmarks and collect results into JSON."""
 
+import contextlib
 import json
 import re
 import subprocess
@@ -28,7 +29,7 @@ def parse_single_gpu(text):
     result = {"correctness": {}, "performance": {}}
 
     # Correctness: "kernel_name      : PASS ..." or "FAIL"
-    for m in re.finditer(r"^(\S+)\s*:\s*(PASS|FAIL).*", text, re.M):
+    for m in re.finditer(r"^(\S+)\s*:\s*(PASS|FAIL).*", text, re.MULTILINE):
         result["correctness"][m.group(1)] = m.group(2)
 
     # Performance table
@@ -56,10 +57,8 @@ def parse_single_gpu(text):
     parts = header_line.split()
     sizes = []
     for p in parts:
-        try:
+        with contextlib.suppress(ValueError):
             sizes.append(int(p))
-        except ValueError:
-            pass
 
     if not sizes:
         return result
@@ -77,7 +76,7 @@ def parse_single_gpu(text):
             continue
         if len(gflops) != len(sizes):
             continue
-        result["performance"][kernel] = {str(s): g for s, g in zip(sizes, gflops)}
+        result["performance"][kernel] = {str(s): g for s, g in zip(sizes, gflops, strict=True)}
 
     return result
 
@@ -91,7 +90,7 @@ def parse_multi_gpu(text):
     # Split by "===== Exp" headers
     exp_re = re.compile(
         r"={3,}\s*Exp\s+(\d+):\s*(.*?)\s*={3,}\n(.*?)(?=\n={3,}\s*Exp|\nDone\.|$)",
-        re.S,
+        re.DOTALL,
     )
 
     for m in exp_re.finditer(text):
@@ -122,7 +121,7 @@ def parse_multi_gpu(text):
             if len(vals) != len(cols):
                 continue
             row = {}
-            for c, v in zip(cols, vals):
+            for c, v in zip(cols, vals, strict=True):
                 c = re.sub(r"\(.*?\)$", "", c)  # clean column names
                 try:
                     # try int first, then float

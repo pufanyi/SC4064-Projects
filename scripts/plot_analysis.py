@@ -205,7 +205,7 @@ def plot_roofline(data):
 # ══════════════════════════════════════════════════════════════════════════
 def plot_strong_scaling(data):
     rows = data["multi_gpu"]["exp1"]["data"]
-    sizes = sorted(set(r["M"] for r in rows))
+    sizes = sorted({r["M"] for r in rows})
 
     fig, ax = plt.subplots(figsize=(5, 3.5))
     for i, sz in enumerate(sizes):
@@ -232,14 +232,14 @@ def plot_strong_scaling(data):
 # ══════════════════════════════════════════════════════════════════════════
 def plot_strong_efficiency(data):
     rows = data["multi_gpu"]["exp1"]["data"]
-    sizes = sorted(set(r["M"] for r in rows))
+    sizes = sorted({r["M"] for r in rows})
 
     fig, ax = plt.subplots(figsize=(5, 3.5))
     for i, sz in enumerate(sizes):
         sub = sorted([r for r in rows if r["M"] == sz], key=lambda r: r["GPUs"])
         t1 = sub[0]["Total"]
         gpus = [r["GPUs"] for r in sub]
-        eff = [t1 / (g * r["Total"]) * 100 for g, r in zip(gpus, sub)]
+        eff = [t1 / (g * r["Total"]) * 100 for g, r in zip(gpus, sub, strict=True)]
         ax.plot(gpus, eff, "o-", label=f"$N = {sz}$", lw=1.8, markersize=5, color=COLORS[i])
 
     ax.axhline(100, color="red", ls="--", alpha=0.3, lw=1)
@@ -393,7 +393,7 @@ def plot_mlp(data):
         ax.text(
             i,
             r["Fwd"] + r["Bwd"] + 0.2,
-            f"{ratio:.1f}×",
+            f"{ratio:.1f}\N{MULTIPLICATION SIGN}",
             ha="center",
             fontsize=8,
             color="gray",
@@ -429,7 +429,7 @@ def plot_overlap(data):
         ax.text(
             i + w / 2,
             r["Overlap"] + 0.05,
-            f"{r['Speedup']:.2f}×",
+            f"{r['Speedup']:.2f}\N{MULTIPLICATION SIGN}",
             ha="center",
             fontsize=8,
             color="gray",

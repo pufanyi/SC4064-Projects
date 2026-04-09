@@ -47,7 +47,7 @@ def parse_single_gpu(filename):
 
 def plot_gflops_comparison(sizes, kernels, outfile="results/gflops_comparison.png"):
     """Bar chart of GFLOPS across kernel optimizations."""
-    fig, ax = plt.subplots(figsize=(14, 7))
+    _fig, ax = plt.subplots(figsize=(14, 7))
 
     x = np.arange(len(sizes))
     n = len(kernels)
@@ -78,7 +78,7 @@ def plot_cublas_percentage(sizes, kernels, outfile="results/cublas_percentage.pn
         return
 
     cublas = np.array(kernels["cuBLAS"])
-    fig, ax = plt.subplots(figsize=(12, 6))
+    _fig, ax = plt.subplots(figsize=(12, 6))
 
     for name, gflops in kernels.items():
         if name == "cuBLAS":
@@ -100,7 +100,7 @@ def plot_cublas_percentage(sizes, kernels, outfile="results/cublas_percentage.pn
 
 def plot_roofline(peak_tflops=19.5, peak_bw_tb=2.0, outfile="results/roofline.png"):
     """Roofline model for A100 with kernel data points."""
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _fig, ax = plt.subplots(figsize=(10, 6))
 
     # Operational intensity range
     oi = np.logspace(-2, 3, 500)
@@ -163,10 +163,7 @@ def parse_multi_gpu(filename):
             if (
                 not current
                 or not line
-                or line.startswith("---")
-                or line.startswith("M ")
-                or line.startswith("Kernel")
-                or line.startswith("Size")
+                or line.startswith(("---", "M ", "Kernel", "Size"))
             ):
                 continue
             if line.startswith("Done"):
@@ -249,8 +246,8 @@ def parse_multi_gpu(filename):
 def plot_strong_scaling(exp1, outfile="results/strong_scaling.png"):
     if not exp1:
         return
-    fig, ax = plt.subplots(figsize=(10, 6))
-    sizes = sorted(set(row["M"] for row in exp1))
+    _fig, ax = plt.subplots(figsize=(10, 6))
+    sizes = sorted({row["M"] for row in exp1})
     for size in sizes:
         rows = sorted([r for r in exp1 if r["M"] == size], key=lambda r: r["gpus"])
         ax.plot(
@@ -274,7 +271,7 @@ def plot_weak_scaling(exp2, outfile="results/weak_scaling.png"):
     if not exp2:
         return
     rows = sorted(exp2, key=lambda r: r["gpus"])
-    fig, ax = plt.subplots(figsize=(9, 5))
+    _fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot([r["gpus"] for r in rows], [r["total_ms"] for r in rows], "o-", linewidth=2)
     ax.set_xlabel("GPUs")
     ax.set_ylabel("Total Time (ms)")
@@ -289,7 +286,7 @@ def plot_ratio_vs_size(exp3, outfile="results/comm_compute_ratio_vs_size.png"):
     if not exp3:
         return
     rows = sorted(exp3, key=lambda r: r["size"])
-    fig, ax = plt.subplots(figsize=(9, 5))
+    _fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot([r["size"] for r in rows], [r["ratio"] for r in rows], "o-", linewidth=2)
     ax.set_xlabel("Matrix Size")
     ax.set_ylabel("Comm / Compute Ratio")
@@ -303,7 +300,7 @@ def plot_ratio_vs_size(exp3, outfile="results/comm_compute_ratio_vs_size.png"):
 def plot_ratio_vs_kernel(exp4, outfile="results/comm_compute_ratio_vs_kernel.png"):
     if not exp4:
         return
-    fig, ax = plt.subplots(figsize=(11, 5))
+    _fig, ax = plt.subplots(figsize=(11, 5))
     kernels = [r["kernel"] for r in exp4]
     ratios = [r["ratio"] for r in exp4]
     ax.bar(kernels, ratios, color=plt.cm.plasma(np.linspace(0.15, 0.85, len(exp4))))
@@ -321,7 +318,7 @@ def plot_mlp_timing(exp5, outfile="results/mlp_forward_backward.png"):
         return
     rows = sorted(exp5, key=lambda r: r["M"])
     sizes = [r["M"] for r in rows]
-    fig, ax = plt.subplots(figsize=(10, 6))
+    _fig, ax = plt.subplots(figsize=(10, 6))
     ax.plot(sizes, [r["fwd_ms"] for r in rows], "o-", linewidth=2, label="Forward")
     ax.plot(sizes, [r["bwd_ms"] for r in rows], "o-", linewidth=2, label="Backward")
     ax.plot(sizes, [r["total_ms"] for r in rows], "o-", linewidth=2, label="Total")
@@ -339,7 +336,7 @@ def plot_overlap(exp6, outfile="results/overlap_speedup.png"):
     if not exp6:
         return
     rows = sorted(exp6, key=lambda r: r["size"])
-    fig, ax = plt.subplots(figsize=(9, 5))
+    _fig, ax = plt.subplots(figsize=(9, 5))
     ax.plot([r["size"] for r in rows], [r["speedup"] for r in rows], "o-", linewidth=2)
     ax.axhline(y=1.0, color="red", linestyle="--", alpha=0.5)
     ax.set_xlabel("Matrix Size")

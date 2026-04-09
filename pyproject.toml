@@ -13,7 +13,24 @@ line-length = 100
 target-version = "py313"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "UP"]
+select = [
+    "E",      # pycodestyle errors
+    "F",      # pyflakes
+    "W",      # pycodestyle warnings
+    "I",      # isort
+    "UP",     # pyupgrade — modern syntax
+    "B",      # flake8-bugbear — common pitfalls
+    "SIM",    # flake8-simplify — simplifiable constructs
+    "FA",     # flake8-future-annotations
+    "PIE",    # flake8-pie — misc lints
+    "PT",     # flake8-pytest-style
+    "RET",    # flake8-return — unnecessary returns
+    "RUF",    # Ruff-specific rules
+    "C4",     # flake8-comprehensions
+    "TCH",    # flake8-type-checking — move imports to TYPE_CHECKING
+    "PERF",   # perflint — performance anti-patterns
+    "FURB",   # refurb — modern Python idioms
+]
 
 [dependency-groups]
 dev = [

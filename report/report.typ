@@ -2,6 +2,10 @@
 // Typst Report — Scaling Matrix Multiplication
 // ═══════════════════════════════════════════════════════════════════════
 
+// ── Accent palette ──────────────────────────────────────────────────
+#let accent = rgb("#1a56db")
+#let accent-light = rgb("#eff6ff")
+
 #set document(
   title: "Scaling Matrix Multiplication: From CUDA Kernels to Multi-GPU Tensor Parallelism",
   author: ("Aryan Jain", "Fanyi Pu", "Ze Hong Maxwell Au"),
@@ -9,62 +13,99 @@
 
 #set page(
   paper: "a4",
-  margin: (x: 2.2cm, y: 2.4cm),
+  columns: 2,
+  margin: (top: 2.4cm, bottom: 2cm, x: 1.6cm),
   numbering: "1",
+  number-align: center,
   header: context {
     if counter(page).get().first() > 1 [
-      #set text(8pt, fill: gray)
-      Scaling Matrix Multiplication #h(1fr) SC4064 GPU Programming
+      #set text(7.5pt, fill: gray.darken(30%))
+      #smallcaps[Scaling Matrix Multiplication] #h(1fr) SC4064 GPU Programming
+      #v(-0.5em)
+      #line(length: 100%, stroke: 0.4pt + gray.lighten(40%))
     ]
   },
 )
 
-#set text(font: "New Computer Modern", size: 10pt)
-#set par(justify: true, leading: 0.65em)
+#set text(font: "New Computer Modern", size: 9.5pt)
+#set par(justify: true, leading: 0.52em)
 #set heading(numbering: "1.1")
-#show heading: set block(above: 1.4em, below: 0.8em)
-#set math.equation(numbering: "(1)")
-#show figure: set block(above: 1.2em, below: 1.2em)
-#show figure.caption: set text(size: 9pt)
 
-// ── Helper ───────────────────────────────────────────────────────────
-#let fig(path, caption, width: 95%) = {
+// ── Heading styles ──────────────────────────────────────────────────
+#show heading.where(level: 1): it => {
+  set text(12pt, weight: "bold")
+  block(above: 1.4em, below: 0.7em)[
+    #it
+    #v(-0.5em)
+    #line(length: 100%, stroke: 0.6pt + accent)
+  ]
+}
+#show heading.where(level: 2): it => {
+  set text(10pt, weight: "bold")
+  block(above: 1.1em, below: 0.5em, it)
+}
+#show heading.where(level: 3): it => {
+  set text(9.5pt, weight: "bold", style: "italic")
+  block(above: 0.9em, below: 0.4em, it)
+}
+
+#set math.equation(numbering: "(1)")
+
+// ── Figure / table styling ──────────────────────────────────────────
+#show figure: set figure(scope: "parent", placement: auto)
+#show figure: set block(above: 1em, below: 1em)
+#show figure.caption: set text(size: 8.5pt)
+
+// ── Code block styling ──────────────────────────────────────────────
+#show raw.where(block: true): set block(
+  width: 100%,
+  inset: 8pt,
+  radius: 2pt,
+  fill: luma(248),
+  stroke: 0.5pt + luma(220),
+)
+
+// ── Helper ──────────────────────────────────────────────────────────
+#let fig(path, caption, width: 80%) = {
   figure(
     image(path, width: width),
     caption: caption,
   )
 }
 
-// ── Title ────────────────────────────────────────────────────────────
-#align(center)[
-  #block(above: 2em, below: 0.6em)[
-    #text(16pt, weight: "bold")[Scaling Matrix Multiplication:\ From CUDA Kernels to Multi-GPU Tensor Parallelism]
-  ]
-  #text(11pt)[
-    Aryan Jain#super[\*] #h(1.5em) Fanyi Pu#super[\*] #h(1.5em) Ze Hong Maxwell Au#super[\*]
-  ] \
-  #text(9pt, fill: gray)[
-    School of Computer Science and Engineering, Nanyang Technological University \
-    #super[\*]Equal contribution. Authors listed in alphabetical order.
+// ═════════════════════════════════════════════════════════════════════
+// Title (full-width across both columns)
+// ═════════════════════════════════════════════════════════════════════
+#place(top, scope: "parent", float: true, clearance: 0.8em)[
+  #align(center)[
+    #block(above: 0.5em, below: 0.3em)[
+      #text(16pt, weight: "bold")[Scaling Matrix Multiplication:\ From CUDA Kernels to Multi-GPU Tensor Parallelism]
+    ]
+    #text(11pt)[
+      Aryan Jain#super[\*] #h(1.5em) Fanyi Pu#super[\*] #h(1.5em) Ze Hong Maxwell Au#super[\*]
+    ] \
+    #text(8.5pt, fill: gray.darken(30%))[
+      School of Computer Science and Engineering, Nanyang Technological University \
+      #super[\*]Equal contribution. Authors listed in alphabetical order.
+    ]
+    #v(0.1em)
+    #text(8.5pt)[SC4064 GPU Programming — Course Project Report]
   ]
   #v(0.5em)
-  #text(9pt)[SC4064 GPU Programming --- Course Project Report]
+  #block(
+    width: 100%,
+    inset: (x: 1.5em, y: 1em),
+    radius: 2pt,
+    fill: accent-light,
+    stroke: 0.4pt + accent.lighten(50%),
+  )[
+    #text(weight: "bold")[Abstract.]
+    General Matrix Multiplication (GEMM) is the computational backbone of modern deep learning.
+    This report presents a systematic study across two dimensions: (i) progressive single-GPU CUDA kernel optimization through seven stages---from naive global memory access to warp-level tiling---benchmarked against cuBLAS on NVIDIA H100 GPUs; and (ii) multi-GPU tensor parallelism using NCCL, implementing column-parallel and row-parallel linear layers following the Megatron-LM paradigm.
+    Our best custom kernel achieves 63% of cuBLAS throughput at 32.8 TFLOPS.
+    Scaling experiments on 8$times$H100 GPUs with matrices up to $32768 times 32768$ demonstrate $7.6 times$ strong-scaling speedup and 400 TFLOPS aggregate throughput. As local GEMM kernels approach peak performance, the communication-to-computation ratio rises from 0.20 (naive kernel) to 0.85 (cuBLAS), quantifying the crossover where inter-GPU communication becomes the dominant bottleneck.
+  ]
 ]
-
-#v(0.8em)
-
-// ═════════════════════════════════════════════════════════════════════
-// Abstract
-// ═════════════════════════════════════════════════════════════════════
-#block(inset: (x: 2em))[
-  #text(weight: "bold")[Abstract.]
-  General Matrix Multiplication (GEMM) is the computational backbone of modern deep learning.
-  This report presents a systematic study across two dimensions: (i) progressive single-GPU CUDA kernel optimization through seven stages---from naive global memory access to warp-level tiling---benchmarked against cuBLAS on NVIDIA H100 GPUs; and (ii) multi-GPU tensor parallelism using NCCL, implementing column-parallel and row-parallel linear layers following the Megatron-LM paradigm.
-  Our best custom kernel achieves 63% of cuBLAS throughput at 32.8 TFLOPS.
-  Scaling experiments on 8$times$H100 GPUs with matrices up to $32768 times 32768$ demonstrate $7.6 times$ strong-scaling speedup and 400 TFLOPS aggregate throughput. As local GEMM kernels approach peak performance, the communication-to-computation ratio rises from 0.20 (naive kernel) to 0.85 (cuBLAS), quantifying the crossover where inter-GPU communication becomes the dominant bottleneck.
-]
-
-#v(0.6em)
 
 // ═════════════════════════════════════════════════════════════════════
 = Introduction
