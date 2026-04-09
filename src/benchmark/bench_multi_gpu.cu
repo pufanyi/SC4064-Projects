@@ -6,8 +6,7 @@
  * while ensuring every rank participates in collectives.
  *
  * Usage: ./bench_multi_gpu [max_num_gpus] [kernel_id]
- *   kernel_id: 0=naive, 1=coalesced, 2=smem, 3=1d, 4=2d,
- *              5=vectorized, 6=warptile, 7=cuBLAS (default)
+ *   kernel_id: index into KernelRegistry (default: last registered, typically cuBLAS)
  */
 
 #include <cuda_runtime.h>
@@ -21,7 +20,7 @@
 #include <thread>
 #include <vector>
 
-#include "../kernels/gemm_dispatch.cuh"
+#include "../kernels/kernel_registry.cuh"
 #include "../tensor_parallel/tensor_parallel.cuh"
 #include "../utils/cuda_raii.cuh"
 #include "../utils/cuda_utils.cuh"
@@ -39,6 +38,17 @@ struct DeviceContext {
 
     explicit DeviceContext(int dev) : device_id(dev) {
         CUDA_CHECK(cudaSetDevice(dev));
+    }
+
+    /// Activate this GPU context on the current thread: set device + cuBLAS handle.
+    void activate() const {
+        CUDA_CHECK(cudaSetDevice(device_id));
+        for (int i = 0; i < KernelRegistry::count(); i++) {
+            auto& k = KernelRegistry::get_mut(i);
+            if (k.needs_cublas()) {
+                k.set_cublas_handle(handle);
+            }
+        }
     }
 };
 
@@ -60,6 +70,16 @@ class CommRegistry {
         if (max_gpus > 1 && (max_gpus & (max_gpus - 1)) != 0) {
             groups_[max_gpus].resize(max_gpus);
             NCCL_CHECK(ncclCommInitAll(groups_[max_gpus].data(), max_gpus, devs.data()));
+        }
+
+        // Provide cuBLAS handles to kernels that need them (e.g. cuBLAS kernel).
+        // We use GPU 0's handle; each per-GPU context sets its own device before launch.
+        for (int i = 0; i < KernelRegistry::count(); i++) {
+            auto& k = KernelRegistry::get_mut(i);
+            if (k.needs_cublas()) {
+                // Handle will be set per-GPU at call site; this is a placeholder
+                // so the kernel object knows cublas is available.
+            }
         }
     }
 
@@ -204,15 +224,17 @@ struct RowParallelBuffers {
 
 int main(int argc, char** argv) {
     int max_gpus = 2;
-    GemmKernel kernel = GemmKernel::CUBLAS;
+    int kernel_id = KernelRegistry::count() - 1;  // default: last registered (cuBLAS)
 
     if (argc > 1) max_gpus = atoi(argv[1]);
     if (argc > 2) {
         int kid = atoi(argv[2]);
-        if (kid >= 0 && kid < kNumKernels) {
-            kernel = static_cast<GemmKernel>(kid);
+        if (kid >= 0 && kid < KernelRegistry::count()) {
+            kernel_id = kid;
         }
     }
+
+    const GemmKernel& kernel = KernelRegistry::get(kernel_id);
 
     int available_gpus = 0;
     CUDA_CHECK(cudaGetDeviceCount(&available_gpus));
@@ -224,7 +246,7 @@ int main(int argc, char** argv) {
 
     printf("===== Multi-GPU Tensor Parallel Benchmark =====\n");
     printf("Max GPUs used:      %d\n", max_gpus);
-    printf("Local GEMM kernel:  %s\n\n", gemm_kernel_name(kernel));
+    printf("Local GEMM kernel:  %s\n\n", kernel.name());
 
     // Initialize per-GPU contexts (RAII: handle + streams auto-managed)
     std::vector<DeviceContext> contexts;
@@ -233,6 +255,9 @@ int main(int argc, char** argv) {
         contexts.emplace_back(g);
         print_device_info();
     }
+
+    // Activate GPU 0 as default for main thread
+    contexts[0].activate();
 
     CommRegistry comms(max_gpus);
     const auto scaling_counts = build_scaling_counts(max_gpus);
@@ -260,9 +285,10 @@ int main(int argc, char** argv) {
 
             double gemm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
-                CUDA_CHECK(cudaSetDevice(ctx.device_id));
-                dispatch_gemm_on_stream(kernel, bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                                        M, N_local, K, ctx.handle, ctx.compute_stream);
+                ctx.activate();
+
+                kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
+                              M, N_local, K, ctx.compute_stream);
                 ctx.compute_stream.synchronize();
             });
 
@@ -270,7 +296,8 @@ int main(int argc, char** argv) {
             if (active_gpus > 1) {
                 comm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
                     auto& ctx = contexts[g];
-                    CUDA_CHECK(cudaSetDevice(ctx.device_id));
+                    ctx.activate();
+
                     NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local,
                                              ncclFloat, comms.get(active_gpus, g),
                                              ctx.comm_stream));
@@ -280,7 +307,8 @@ int main(int argc, char** argv) {
 
             double total_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
-                CUDA_CHECK(cudaSetDevice(ctx.device_id));
+                ctx.activate();
+
                 column_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
                                         bufs[g].Y_full.get(), M, N, K, active_gpus, g, ctx.handle,
                                         comms.get(active_gpus, g), ctx.compute_stream, kernel);
@@ -311,9 +339,9 @@ int main(int argc, char** argv) {
 
         double gemm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
-            dispatch_gemm_on_stream(kernel, bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M,
-                                    N_local, K, ctx.handle, ctx.compute_stream);
+            ctx.activate();
+            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
+                          M, N_local, K, ctx.compute_stream);
             ctx.compute_stream.synchronize();
         });
 
@@ -321,7 +349,8 @@ int main(int argc, char** argv) {
         if (active_gpus > 1) {
             comm_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
-                CUDA_CHECK(cudaSetDevice(ctx.device_id));
+                ctx.activate();
+
                 NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local,
                                          ncclFloat, comms.get(active_gpus, g), ctx.comm_stream));
                 ctx.comm_stream.synchronize();
@@ -330,7 +359,7 @@ int main(int argc, char** argv) {
 
         double total_ms = benchmark_wall_ms(active_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             column_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
                                     bufs[g].Y_full.get(), M, N_total, K, active_gpus, g,
                                     ctx.handle, comms.get(active_gpus, g), ctx.compute_stream,
@@ -360,15 +389,15 @@ int main(int argc, char** argv) {
 
         double gemm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
-            dispatch_gemm_on_stream(kernel, bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M,
-                                    N_local, K, ctx.handle, ctx.compute_stream);
+            ctx.activate();
+            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
+                          M, N_local, K, ctx.compute_stream);
             ctx.compute_stream.synchronize();
         });
 
         double comm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local, ncclFloat,
                                      comms.get(max_gpus, g), ctx.comm_stream));
             ctx.comm_stream.synchronize();
@@ -397,25 +426,26 @@ int main(int argc, char** argv) {
 
         double comm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local, ncclFloat,
                                      comms.get(max_gpus, g), ctx.comm_stream));
             ctx.comm_stream.synchronize();
         });
 
-        for (int ki = 0; ki < kNumKernels; ki++) {
-            auto test_kernel = static_cast<GemmKernel>(ki);
+        for (const auto& kptr : KernelRegistry::all()) {
+            const GemmKernel& test_kernel = *kptr;
 
             double gemm_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
-                CUDA_CHECK(cudaSetDevice(ctx.device_id));
-                dispatch_gemm_on_stream(test_kernel, bufs[g].X.get(), bufs[g].W.get(),
-                                        bufs[g].Y.get(), M, N_local, K, ctx.handle,
-                                        ctx.compute_stream);
+                ctx.activate();
+
+                test_kernel.launch(bufs[g].X.get(), bufs[g].W.get(),
+                                   bufs[g].Y.get(), M, N_local, K,
+                                   ctx.compute_stream);
                 ctx.compute_stream.synchronize();
             });
 
-            printf("%-20s  %10.3f  %10.3f  %8.2f\n", gemm_kernel_name(test_kernel), gemm_ms,
+            printf("%-20s  %10.3f  %10.3f  %8.2f\n", test_kernel.name(), gemm_ms,
                    comm_ms, comm_ms / gemm_ms);
         }
     }
@@ -439,7 +469,7 @@ int main(int argc, char** argv) {
 
         double fwd_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             parallel_mlp_forward(bufs[g].X.get(), bufs[g].W1.get(), bufs[g].W2.get(),
                                  bufs[g].Hidden.get(), bufs[g].YPartial.get(), bufs[g].Y.get(), M,
                                  K, H, N, max_gpus, g, ctx.handle, comms.get(max_gpus, g),
@@ -449,7 +479,7 @@ int main(int argc, char** argv) {
 
         double bwd_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             parallel_mlp_backward(bufs[g].X.get(), bufs[g].W1.get(), bufs[g].W2.get(),
                                   bufs[g].Hidden.get(), bufs[g].dY.get(), bufs[g].dW1.get(),
                                   bufs[g].dW2.get(), bufs[g].dHidden.get(),
@@ -483,7 +513,7 @@ int main(int argc, char** argv) {
 
         double no_overlap_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             row_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
                                  bufs[g].YReduced.get(), M, N, K, max_gpus, g, ctx.handle,
                                  comms.get(max_gpus, g), ctx.compute_stream, kernel);
@@ -492,7 +522,7 @@ int main(int argc, char** argv) {
 
         double overlap_ms = benchmark_wall_ms(max_gpus, kWarmup, kRepeat, [&](int g) {
             auto& ctx = contexts[g];
-            CUDA_CHECK(cudaSetDevice(ctx.device_id));
+            ctx.activate();
             row_parallel_forward_overlap(bufs[g].X.get(), bufs[g].W.get(), bufs[g].YOverlap.get(),
                                          bufs[g].YReducedOverlap.get(), M, N, K, max_gpus, g,
                                          num_chunks, ctx.handle, comms.get(max_gpus, g),

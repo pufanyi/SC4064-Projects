@@ -31,14 +31,14 @@ LIBS_SINGLE := -lcublas
 LIBS_MULTI  := -lcublas -lnccl
 
 # Source files
-KERNEL_SRCS := src/kernels/01_naive.cu \
-               src/kernels/02_coalesced.cu \
-               src/kernels/03_smem_tiling.cu \
-               src/kernels/04_1d_blocktile.cu \
-               src/kernels/05_2d_blocktile.cu \
-               src/kernels/06_vectorized.cu \
-               src/kernels/07_warptile.cu \
-               src/kernels/cublas_ref.cu
+KERNEL_SRCS := src/kernels/naive.cu \
+               src/kernels/coalesced.cu \
+               src/kernels/smem_tiling.cu \
+               src/kernels/blocktile_1d.cu \
+               src/kernels/blocktile_2d.cu \
+               src/kernels/vectorized.cu \
+               src/kernels/warptile.cu \
+               src/kernels/cublas.cu
 
 BUILD_DIR  := build
 
