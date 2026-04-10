@@ -19,21 +19,45 @@ FIGS.mkdir(parents=True, exist_ok=True)
 plt.rcParams.update(
     {
         "font.family": "serif",
-        "font.size": 10,
-        "axes.titlesize": 12,
+        "font.serif": ["CMU Serif", "Computer Modern Roman", "Times New Roman", "DejaVu Serif"],
+        "mathtext.fontset": "cm",
+        "font.size": 11,
+        "axes.titlesize": 13,
+        "axes.titleweight": "bold",
         "axes.labelsize": 11,
         "legend.fontsize": 8.5,
-        "xtick.labelsize": 9,
-        "ytick.labelsize": 9,
-        "figure.dpi": 200,
+        "legend.framealpha": 0.85,
+        "legend.edgecolor": "#cccccc",
+        "xtick.labelsize": 9.5,
+        "ytick.labelsize": 9.5,
+        "figure.dpi": 300,
         "savefig.bbox": "tight",
-        "savefig.pad_inches": 0.05,
+        "savefig.pad_inches": 0.08,
         "axes.grid": True,
-        "grid.alpha": 0.25,
+        "grid.alpha": 0.2,
+        "grid.linewidth": 0.5,
         "axes.spines.top": False,
         "axes.spines.right": False,
+        "axes.linewidth": 0.8,
+        "xtick.major.width": 0.8,
+        "ytick.major.width": 0.8,
+        "lines.linewidth": 2,
+        "lines.markersize": 6,
     }
 )
+
+# Cohesive palette — colourblind-friendly, print-safe
+PAL = {
+    "blue": "#2563eb",
+    "orange": "#ea580c",
+    "green": "#16a34a",
+    "red": "#dc2626",
+    "purple": "#7c3aed",
+    "teal": "#0891b2",
+    "pink": "#db2777",
+    "gray": "#6b7280",
+    "amber": "#d97706",
+}
 
 KERNEL_ORDER = [
     "1_naive",
@@ -60,7 +84,7 @@ KERNEL_LABELS = {
 # Exclude uncoalesced from most plots (it's a negative example)
 KERNELS_MAIN = [k for k in KERNEL_ORDER if k != "2_uncoalesced"]
 
-COLORS = plt.cm.tab10.colors
+COLORS = list(PAL.values())
 
 
 def load():
@@ -76,11 +100,12 @@ def plot_kernel_gflops(data):
     sizes = sorted(perf[KERNELS_MAIN[0]].keys(), key=int)
     kernels = KERNELS_MAIN
 
-    fig, ax = plt.subplots(figsize=(7, 3.8))
+    fig, ax = plt.subplots(figsize=(7.5, 4))
     x = np.arange(len(sizes))
     n = len(kernels)
-    w = 0.8 / n
-    colors = plt.cm.viridis(np.linspace(0.1, 0.92, n))
+    w = 0.82 / n
+    bar_colors = [PAL["blue"], PAL["teal"], PAL["green"], PAL["amber"],
+                  PAL["orange"], PAL["red"], PAL["purple"], PAL["gray"]]
 
     for i, k in enumerate(kernels):
         vals = [perf[k][s] for s in sizes]
@@ -89,9 +114,9 @@ def plot_kernel_gflops(data):
             vals,
             w,
             label=KERNEL_LABELS[k],
-            color=colors[i],
+            color=bar_colors[i % len(bar_colors)],
             edgecolor="white",
-            linewidth=0.3,
+            linewidth=0.4,
         )
 
     ax.set_xlabel("Matrix Size ($M = N = K$)")
@@ -99,7 +124,7 @@ def plot_kernel_gflops(data):
     ax.set_title("Single-GPU GEMM Kernel Performance")
     ax.set_xticks(x + w * (n - 1) / 2)
     ax.set_xticklabels(sizes)
-    ax.legend(ncol=2, loc="upper left")
+    ax.legend(ncol=2, loc="upper left", frameon=True)
     fig.savefig(FIGS / "kernel_gflops.pdf")
     plt.close(fig)
     print("  kernel_gflops.pdf")
@@ -114,7 +139,9 @@ def plot_cublas_pct(data):
     cublas = np.array([perf["cuBLAS"][s] for s in sizes])
     kernels = [k for k in KERNELS_MAIN if k != "cuBLAS"]
 
-    fig, ax = plt.subplots(figsize=(5.5, 3.5))
+    fig, ax = plt.subplots(figsize=(5.5, 3.8))
+    line_colors = [PAL["blue"], PAL["teal"], PAL["green"], PAL["amber"],
+                   PAL["orange"], PAL["red"], PAL["purple"]]
     for i, k in enumerate(kernels):
         vals = np.array([perf[k][s] for s in sizes])
         pct = vals / cublas * 100
@@ -123,16 +150,16 @@ def plot_cublas_pct(data):
             pct,
             "o-",
             label=KERNEL_LABELS[k],
-            linewidth=1.8,
-            markersize=4,
-            color=COLORS[i],
+            linewidth=2,
+            markersize=5,
+            color=line_colors[i % len(line_colors)],
         )
 
-    ax.axhline(100, color="red", ls="--", alpha=0.4, lw=1, label="cuBLAS (100%)")
+    ax.axhline(100, color=PAL["gray"], ls="--", alpha=0.5, lw=1, label="cuBLAS (100%)")
     ax.set_xlabel("Matrix Size ($M = N = K$)")
     ax.set_ylabel("\\% of cuBLAS Performance")
     ax.set_title("Kernel Performance Relative to cuBLAS")
-    ax.legend(fontsize=7.5, ncol=2)
+    ax.legend(fontsize=8, ncol=2, frameon=True)
     ax.set_ylim(0, 110)
     fig.savefig(FIGS / "cublas_percentage.pdf")
     plt.close(fig)
@@ -150,41 +177,39 @@ def plot_roofline(data):
     perf = data["single_gpu"]["performance"]
     size = "4096"
 
-    fig, ax = plt.subplots(figsize=(5.5, 3.8))
+    fig, ax = plt.subplots(figsize=(5.5, 4))
 
     # Roofline curve
     oi = np.logspace(-1, 3, 500)
     roof = np.minimum(peak_gflops, peak_bw * oi)
-    ax.loglog(oi, roof, "k-", lw=2, label="Roofline")
+    ax.loglog(oi, roof, "k-", lw=2.5, label="Roofline")
 
     ridge = peak_gflops / peak_bw
-    ax.axvline(ridge, color="gray", ls=":", alpha=0.4)
+    ax.axvline(ridge, color="gray", ls=":", alpha=0.5)
     ax.text(
-        ridge * 1.15,
+        ridge * 1.2,
         peak_gflops * 0.55,
         f"Ridge point\n({ridge:.1f} FLOP/B)",
-        fontsize=7,
+        fontsize=8,
         color="gray",
     )
 
-    # Plot kernels — estimate operational intensity from achieved throughput
-    # For GEMM(N,N,N): 2N^3 FLOPs, data moved = (2N^2 read + N^2 write)*4 bytes = 12N^2
-    # Naive OI ≈ 2N^3 / 12N^2 = N/6 ≈ 682 for N=4096 (but only if perfect reuse)
-    # Actual OI for each kernel estimated by: achieved_gflops / peak_bw
-    # This gives the "effective" OI the kernel operates at on the roofline
     kernels = KERNELS_MAIN
     markers = ["v", "^", "s", "D", "p", "h", "*", "o"]
-    colors = plt.cm.plasma(np.linspace(0.15, 0.85, len(kernels)))
+    roof_colors = [PAL["blue"], PAL["teal"], PAL["green"], PAL["amber"],
+                   PAL["orange"], PAL["red"], PAL["purple"], PAL["gray"]]
 
     for i, k in enumerate(kernels):
         gf = perf[k][size]
-        eff_oi = gf / peak_bw  # effective operational intensity
+        eff_oi = gf / peak_bw
         ax.plot(
             eff_oi,
             gf,
             markers[i % len(markers)],
-            color=colors[i],
-            markersize=8,
+            color=roof_colors[i % len(roof_colors)],
+            markersize=10,
+            markeredgecolor="white",
+            markeredgewidth=0.6,
             label=KERNEL_LABELS[k],
             zorder=5,
         )
@@ -194,7 +219,7 @@ def plot_roofline(data):
     ax.set_title(f"Roofline Model — H100 (size {size})")
     ax.set_xlim(0.08, 500)
     ax.set_ylim(100, peak_gflops * 1.3)
-    ax.legend(fontsize=7, ncol=2, loc="lower right")
+    ax.legend(fontsize=7.5, ncol=2, loc="lower right", frameon=True)
     fig.savefig(FIGS / "roofline.pdf")
     plt.close(fig)
     print("  roofline.pdf")
@@ -207,20 +232,19 @@ def plot_strong_scaling(data):
     rows = data["multi_gpu"]["exp1"]["data"]
     sizes = sorted({r["M"] for r in rows})
 
-    fig, ax = plt.subplots(figsize=(5, 3.5))
+    fig, ax = plt.subplots(figsize=(5, 3.8))
     for i, sz in enumerate(sizes):
         sub = sorted([r for r in rows if r["M"] == sz], key=lambda r: r["GPUs"])
         gpus = [r["GPUs"] for r in sub]
         times = [r["Total"] for r in sub]
-        ax.plot(gpus, times, "o-", label=f"$N = {sz}$", lw=1.8, markersize=5, color=COLORS[i])
-        # ideal scaling
+        ax.plot(gpus, times, "o-", label=f"$N = {sz}$", lw=2, markersize=6, color=COLORS[i])
         t1 = times[0]
-        ax.plot(gpus, [t1 / g for g in gpus], ":", color=COLORS[i], alpha=0.4, lw=1)
+        ax.plot(gpus, [t1 / g for g in gpus], ":", color=COLORS[i], alpha=0.35, lw=1)
 
     ax.set_xlabel("Number of GPUs")
     ax.set_ylabel("Total Time (ms)")
     ax.set_title("Strong Scaling — Column Parallel Forward")
-    ax.legend()
+    ax.legend(frameon=True)
     ax.set_xticks([1, 2, 4, 8])
     fig.savefig(FIGS / "strong_scaling.pdf")
     plt.close(fig)
@@ -234,19 +258,19 @@ def plot_strong_efficiency(data):
     rows = data["multi_gpu"]["exp1"]["data"]
     sizes = sorted({r["M"] for r in rows})
 
-    fig, ax = plt.subplots(figsize=(5, 3.5))
+    fig, ax = plt.subplots(figsize=(5, 3.8))
     for i, sz in enumerate(sizes):
         sub = sorted([r for r in rows if r["M"] == sz], key=lambda r: r["GPUs"])
         t1 = sub[0]["Total"]
         gpus = [r["GPUs"] for r in sub]
         eff = [t1 / (g * r["Total"]) * 100 for g, r in zip(gpus, sub, strict=True)]
-        ax.plot(gpus, eff, "o-", label=f"$N = {sz}$", lw=1.8, markersize=5, color=COLORS[i])
+        ax.plot(gpus, eff, "o-", label=f"$N = {sz}$", lw=2, markersize=6, color=COLORS[i])
 
-    ax.axhline(100, color="red", ls="--", alpha=0.3, lw=1)
+    ax.axhline(100, color=PAL["gray"], ls="--", alpha=0.4, lw=1)
     ax.set_xlabel("Number of GPUs")
     ax.set_ylabel("Parallel Efficiency (\\%)")
     ax.set_title("Strong Scaling Efficiency")
-    ax.legend()
+    ax.legend(frameon=True)
     ax.set_xticks([1, 2, 4, 8])
     ax.set_ylim(0, 120)
     fig.savefig(FIGS / "strong_scaling_efficiency.pdf")
@@ -261,34 +285,24 @@ def plot_weak_scaling(data):
     rows = sorted(data["multi_gpu"]["exp2"]["data"], key=lambda r: r["GPUs"])
     gpus = [r["GPUs"] for r in rows]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8, 3.2))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(8.5, 3.4))
 
-    # Time
-    ax1.plot(gpus, [r["Total"] for r in rows], "o-", lw=2, markersize=5, color=COLORS[0])
-    ax1.axhline(rows[0]["Total"], color="red", ls="--", alpha=0.3, lw=1, label="Ideal")
+    ax1.plot(gpus, [r["Total"] for r in rows], "o-", lw=2, markersize=6, color=PAL["blue"])
+    ax1.axhline(rows[0]["Total"], color=PAL["red"], ls="--", alpha=0.35, lw=1, label="Ideal")
     ax1.set_xlabel("Number of GPUs")
     ax1.set_ylabel("Total Time (ms)")
     ax1.set_title("Weak Scaling — Time")
     ax1.set_xticks(gpus)
-    ax1.legend()
+    ax1.legend(frameon=True)
 
-    # GFLOPS
-    ax2.plot(gpus, [r["GFLOPS"] for r in rows], "s-", lw=2, markersize=5, color=COLORS[1])
+    ax2.plot(gpus, [r["GFLOPS"] for r in rows], "s-", lw=2, markersize=6, color=PAL["orange"])
     ideal_gf = rows[0]["GFLOPS"]
-    ax2.plot(
-        gpus,
-        [ideal_gf * g for g in gpus],
-        ":",
-        color="red",
-        alpha=0.4,
-        lw=1,
-        label="Ideal linear",
-    )
+    ax2.plot(gpus, [ideal_gf * g for g in gpus], ":", color=PAL["red"], alpha=0.4, lw=1, label="Ideal linear")
     ax2.set_xlabel("Number of GPUs")
     ax2.set_ylabel("Aggregate GFLOPS")
     ax2.set_title("Weak Scaling — Throughput")
     ax2.set_xticks(gpus)
-    ax2.legend()
+    ax2.legend(frameon=True)
 
     fig.tight_layout()
     fig.savefig(FIGS / "weak_scaling.pdf")
@@ -302,23 +316,23 @@ def plot_weak_scaling(data):
 def plot_comm_compute_size(data):
     rows = sorted(data["multi_gpu"]["exp3"]["data"], key=lambda r: r["Size"])
 
-    fig, ax = plt.subplots(figsize=(4.5, 3.2))
+    fig, ax = plt.subplots(figsize=(5, 3.5))
     sizes = [str(r["Size"]) for r in rows]
     gemm = [r["GEMM"] for r in rows]
     comm = [r["Comm"] for r in rows]
     x = np.arange(len(sizes))
     w = 0.35
 
-    ax.bar(x - w / 2, gemm, w, label="GEMM", color=COLORS[0])
-    ax.bar(x + w / 2, comm, w, label="Communication", color=COLORS[1])
+    ax.bar(x - w / 2, gemm, w, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax.bar(x + w / 2, comm, w, label="Communication", color=PAL["orange"], edgecolor="white", linewidth=0.4)
     for i, r in enumerate(rows):
         ax.text(
             i + w / 2,
             r["Comm"] + 0.05,
             f"{r['Ratio']:.2f}",
             ha="center",
-            fontsize=7.5,
-            color="gray",
+            fontsize=8,
+            color=PAL["gray"],
         )
 
     ax.set_xlabel("Matrix Size")
@@ -326,7 +340,7 @@ def plot_comm_compute_size(data):
     ax.set_title("Compute vs Communication (8 GPUs)")
     ax.set_xticks(x)
     ax.set_xticklabels(sizes)
-    ax.legend()
+    ax.legend(frameon=True)
     fig.savefig(FIGS / "comm_compute_ratio_size.pdf")
     plt.close(fig)
     print("  comm_compute_ratio_size.pdf")
@@ -338,7 +352,7 @@ def plot_comm_compute_size(data):
 def plot_comm_compute_kernel(data):
     rows = data["multi_gpu"]["exp4"]["data"]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9, 3.5), gridspec_kw={"width_ratios": [3, 2]})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.5, 3.8), gridspec_kw={"width_ratios": [3, 2]})
 
     kernels = [r["Kernel"] for r in rows]
     labels = [KERNEL_LABELS.get(r["Kernel"], r["Kernel"]) for r in rows]
@@ -346,27 +360,27 @@ def plot_comm_compute_kernel(data):
     comm = [r["Comm"] for r in rows]
     ratio = [r["Ratio"] for r in rows]
 
-    # Left: stacked horizontal bar
     y = np.arange(len(kernels))
-    ax1.barh(y, gemm, 0.6, label="GEMM", color=COLORS[0])
-    ax1.barh(y, comm, 0.6, left=gemm, label="Communication", color=COLORS[1])
+    ax1.barh(y, gemm, 0.6, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax1.barh(y, comm, 0.6, left=gemm, label="Communication", color=PAL["orange"], edgecolor="white", linewidth=0.4)
     ax1.set_yticks(y)
     ax1.set_yticklabels(labels)
     ax1.set_xlabel("Time (ms)")
     ax1.set_title("Compute vs Communication per Kernel")
-    ax1.legend(loc="lower right", fontsize=8)
+    ax1.legend(loc="lower right", fontsize=8, frameon=True)
     ax1.invert_yaxis()
 
-    # Right: ratio bar
-    colors = plt.cm.RdYlGn_r(np.array(ratio) / max(ratio))
-    ax2.barh(y, ratio, 0.6, color=colors)
+    # Right: ratio with a sequential blue→red gradient
+    norm_ratio = np.array(ratio) / max(ratio)
+    ratio_colors = plt.cm.YlOrRd(norm_ratio * 0.8 + 0.1)
+    ax2.barh(y, ratio, 0.6, color=ratio_colors, edgecolor="white", linewidth=0.4)
     ax2.set_yticks(y)
     ax2.set_yticklabels(labels)
     ax2.set_xlabel("Comm / Compute Ratio")
     ax2.set_title("Communication Bottleneck")
     ax2.invert_yaxis()
     for i, v in enumerate(ratio):
-        ax2.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=8)
+        ax2.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=8.5)
 
     fig.tight_layout()
     fig.savefig(FIGS / "comm_compute_ratio_kernel.pdf")
@@ -380,14 +394,14 @@ def plot_comm_compute_kernel(data):
 def plot_mlp(data):
     rows = sorted(data["multi_gpu"]["exp5"]["data"], key=lambda r: r["M"])
 
-    fig, ax = plt.subplots(figsize=(4.5, 3.2))
+    fig, ax = plt.subplots(figsize=(5, 3.5))
     sizes = [str(r["M"]) for r in rows]
     fwd = [r["Fwd"] for r in rows]
     bwd = [r["Bwd"] for r in rows]
     x = np.arange(len(sizes))
 
-    ax.bar(x, fwd, 0.5, label="Forward", color=COLORS[0])
-    ax.bar(x, bwd, 0.5, bottom=fwd, label="Backward", color=COLORS[3])
+    ax.bar(x, fwd, 0.5, label="Forward", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax.bar(x, bwd, 0.5, bottom=fwd, label="Backward", color=PAL["red"], edgecolor="white", linewidth=0.4)
     for i, r in enumerate(rows):
         ratio = r["Bwd"] / r["Fwd"]
         ax.text(
@@ -395,8 +409,8 @@ def plot_mlp(data):
             r["Fwd"] + r["Bwd"] + 0.2,
             f"{ratio:.1f}\N{MULTIPLICATION SIGN}",
             ha="center",
-            fontsize=8,
-            color="gray",
+            fontsize=8.5,
+            color=PAL["gray"],
         )
 
     ax.set_xlabel("Matrix Size ($M = H = N$)")
@@ -404,7 +418,7 @@ def plot_mlp(data):
     ax.set_title("Parallel MLP Timing (8 GPUs)")
     ax.set_xticks(x)
     ax.set_xticklabels(sizes)
-    ax.legend()
+    ax.legend(frameon=True)
     fig.savefig(FIGS / "mlp_fwd_bwd.pdf")
     plt.close(fig)
     print("  mlp_fwd_bwd.pdf")
@@ -416,23 +430,23 @@ def plot_mlp(data):
 def plot_overlap(data):
     rows = sorted(data["multi_gpu"]["exp6"]["data"], key=lambda r: r["Size"])
 
-    fig, ax = plt.subplots(figsize=(4.5, 3.2))
+    fig, ax = plt.subplots(figsize=(5, 3.5))
     sizes = [str(r["Size"]) for r in rows]
     no_ovlp = [r["NoOvlp"] for r in rows]
     ovlp = [r["Overlap"] for r in rows]
     x = np.arange(len(sizes))
     w = 0.3
 
-    ax.bar(x - w / 2, no_ovlp, w, label="No Overlap", color=COLORS[0])
-    ax.bar(x + w / 2, ovlp, w, label="Overlap (4 chunks)", color=COLORS[2])
+    ax.bar(x - w / 2, no_ovlp, w, label="No Overlap", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax.bar(x + w / 2, ovlp, w, label="Overlap (4 chunks)", color=PAL["green"], edgecolor="white", linewidth=0.4)
     for i, r in enumerate(rows):
         ax.text(
             i + w / 2,
             r["Overlap"] + 0.05,
             f"{r['Speedup']:.2f}\N{MULTIPLICATION SIGN}",
             ha="center",
-            fontsize=8,
-            color="gray",
+            fontsize=8.5,
+            color=PAL["gray"],
         )
 
     ax.set_xlabel("Matrix Size")
@@ -440,7 +454,7 @@ def plot_overlap(data):
     ax.set_title("Communication-Compute Overlap (8 GPUs)")
     ax.set_xticks(x)
     ax.set_xticklabels(sizes)
-    ax.legend()
+    ax.legend(frameon=True)
     fig.savefig(FIGS / "overlap_comparison.pdf")
     plt.close(fig)
     print("  overlap_comparison.pdf")
