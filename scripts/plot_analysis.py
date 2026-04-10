@@ -297,7 +297,10 @@ def plot_weak_scaling(data):
 
     ax2.plot(gpus, [r["GFLOPS"] for r in rows], "s-", lw=2, markersize=6, color=PAL["orange"])
     ideal_gf = rows[0]["GFLOPS"]
-    ax2.plot(gpus, [ideal_gf * g for g in gpus], ":", color=PAL["red"], alpha=0.4, lw=1, label="Ideal linear")
+    ax2.plot(
+        gpus, [ideal_gf * g for g in gpus], ":", color=PAL["red"], alpha=0.4, lw=1,
+        label="Ideal linear",
+    )
     ax2.set_xlabel("Number of GPUs")
     ax2.set_ylabel("Aggregate GFLOPS")
     ax2.set_title("Weak Scaling — Throughput")
@@ -324,7 +327,10 @@ def plot_comm_compute_size(data):
     w = 0.35
 
     ax.bar(x - w / 2, gemm, w, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
-    ax.bar(x + w / 2, comm, w, label="Communication", color=PAL["orange"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x + w / 2, comm, w, label="Communication",
+        color=PAL["orange"], edgecolor="white", linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         ax.text(
             i + w / 2,
@@ -362,7 +368,10 @@ def plot_comm_compute_kernel(data):
 
     y = np.arange(len(kernels))
     ax1.barh(y, gemm, 0.6, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
-    ax1.barh(y, comm, 0.6, left=gemm, label="Communication", color=PAL["orange"], edgecolor="white", linewidth=0.4)
+    ax1.barh(
+        y, comm, 0.6, left=gemm, label="Communication",
+        color=PAL["orange"], edgecolor="white", linewidth=0.4,
+    )
     ax1.set_yticks(y)
     ax1.set_yticklabels(labels)
     ax1.set_xlabel("Time (ms)")
@@ -401,7 +410,10 @@ def plot_mlp(data):
     x = np.arange(len(sizes))
 
     ax.bar(x, fwd, 0.5, label="Forward", color=PAL["blue"], edgecolor="white", linewidth=0.4)
-    ax.bar(x, bwd, 0.5, bottom=fwd, label="Backward", color=PAL["red"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x, bwd, 0.5, bottom=fwd, label="Backward",
+        color=PAL["red"], edgecolor="white", linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         ratio = r["Bwd"] / r["Fwd"]
         ax.text(
@@ -437,8 +449,14 @@ def plot_overlap(data):
     x = np.arange(len(sizes))
     w = 0.3
 
-    ax.bar(x - w / 2, no_ovlp, w, label="No Overlap", color=PAL["blue"], edgecolor="white", linewidth=0.4)
-    ax.bar(x + w / 2, ovlp, w, label="Overlap (4 chunks)", color=PAL["green"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x - w / 2, no_ovlp, w, label="No Overlap",
+        color=PAL["blue"], edgecolor="white", linewidth=0.4,
+    )
+    ax.bar(
+        x + w / 2, ovlp, w, label="Overlap (4 chunks)",
+        color=PAL["green"], edgecolor="white", linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         ax.text(
             i + w / 2,
