@@ -124,33 +124,7 @@ All experiments are conducted on the hardware described in @sec:setup.
 
 == Experimental Setup <sec:setup>
 
-@tab:setup summarizes the hardware and software environment used for all experiments.
-
-#figure(
-  table(
-    columns: (auto, auto),
-    inset: 6pt,
-    align: (left, left),
-    stroke: none,
-    table.hline(),
-    table.header([*Component*], [*Specification*]),
-    table.hline(stroke: 0.5pt),
-    [GPU], [8 $times$ NVIDIA H100 80GB HBM3 (SXM5)],
-    [GPU Interconnect], [NVLink 4.0, all-to-all NV18 (900 GB/s bidirectional per GPU)],
-    [GPU Compute], [132 SMs, 1980 MHz boost, sm\_90, 33.5 TFLOPS FP32 peak],
-    [GPU Memory], [80 GB HBM3, $tilde$3.35 TB/s bandwidth per GPU],
-    [CPU], [2 $times$ Intel Xeon Gold 6448Y (32 cores / 64 threads each, 128 threads total)],
-    [System Memory], [2 TB DDR5],
-    [OS], [Ubuntu 24.04.4 LTS (kernel 5.14.0)],
-    [CUDA Toolkit], [13.1],
-    [NCCL], [2.29.3],
-    [GPU Driver], [550.90.07],
-    table.hline(),
-  ),
-  caption: [Hardware and software configuration.],
-) <tab:setup>
-
-The 8 GPUs are fully connected via NVLink 4.0 with NV18 topology (18 NVLink connections per GPU pair), distributed across 2 NUMA nodes (GPUs 0--3 on NUMA 0, GPUs 4--7 on NUMA 1). This provides a uniform high-bandwidth, low-latency interconnect for NCCL collectives, eliminating PCIe bottlenecks.
+All experiments run on a single node with 8 NVIDIA H100 80GB SXM5 GPUs interconnected via NVLink 4.0 (NV18 topology, 900 GB/s bidirectional per GPU), using CUDA 13.1 and NCCL 2.29.3. The full hardware and software configuration is detailed in @tab:setup (Appendix).
 
 // ═════════════════════════════════════════════════════════════════════
 = Background
@@ -255,6 +229,145 @@ $ T_"AllReduce" approx 2(p-1)/p dot S/B + 2(p-1) dot L $
 The first term (bandwidth) dominates for large messages. For column-parallel `AllGather`:
 $ T_"AllGather" approx (p-1)/p dot S/B + (p-1) dot L $
 As $p arrow infinity$, both approach $S\/B$ (bandwidth-limited). This means communication time depends primarily on _data volume_ ($S = M N dot 4$ bytes for FP32) and interconnect bandwidth, not on the local GEMM kernel speed---a fact we verify experimentally in @sec:ratio.
+
+// ═════════════════════════════════════════════════════════════════════
+= System Design
+// ═════════════════════════════════════════════════════════════════════
+
+The codebase is organized into three loosely-coupled layers: a *kernel abstraction layer* with pluggable GEMM implementations, a *CUDA resource layer* with RAII wrappers, and the *tensor parallelism layer* that composes both.
+
+== Kernel Abstraction and Registry
+
+All GEMM kernels---from the naive baseline to cuBLAS---implement a common abstract interface:
+
+#figure(
+  kind: image,
+  scope: "parent",
+  placement: auto,
+  block(width: 75%, inset: 6pt)[
+    #set text(size: 8pt)
+
+    #align(center)[
+      #block(width: 50%, inset: 6pt, radius: 3pt, stroke: rgb("#3b82f6") + 1.5pt, fill: rgb("#3b82f6").lighten(92%))[
+        #align(center)[
+          #text(weight: "bold", size: 9pt)[`GemmKernel`] #text(fill: gray)[ (abstract)] \
+          #line(length: 100%, stroke: 0.5pt + gray)
+          #v(1pt)
+          `+ name() -> const char*` \
+          `+ launch(A, B, C, M, N, K, stream)` \
+          `+ needs_cublas() -> bool` \
+          `+ set_cublas_handle(handle)` \
+        ]
+      ]
+    ]
+    #v(2pt)
+    #align(center)[
+      #grid(columns: (1fr,) * 4, gutter: 4pt,
+        ..range(4).map(_ => align(center)[#text(11pt)[#sym.triangle.b]]))
+    ]
+    #v(1pt)
+    #grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 5pt,
+      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
+        #text(weight: "bold")[`NaiveKernel`] \ Block: 32$times$32 \ 1 elem/thread
+      ],
+      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
+        #text(weight: "bold")[`SmemTiling`] \ Tile: 32$times$32 \ Shared memory
+      ],
+      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
+        #text(weight: "bold")[`WarpTile`] \ BM$=$BN$=$128 \ Warp-level tiling
+      ],
+      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
+        #text(weight: "bold")[`CublasKernel`] \ cuBLAS `sgemm` \ Tensor Core path
+      ],
+    )
+    #v(1pt)
+    #align(center)[#text(size: 7pt, fill: gray)[+ CoalescedKernel, BlockTile1DKernel, BlockTile2DKernel, VectorizedKernel]]
+  ],
+  caption: [Kernel class hierarchy. Each concrete kernel encapsulates its CUDA `__global__` function, block/grid configuration, and launch logic. The abstract base provides a uniform `launch()` interface.],
+) <fig:class>
+
+Each kernel file self-registers via a static initializer, eliminating the need for centralized dispatch tables:
+```cpp
+// In naive.cu
+class NaiveKernel : public GemmKernel { ... };
+namespace { static int reg = KernelRegistry::add(
+    std::make_unique<NaiveKernel>()); }
+```
+
+The `KernelRegistry` singleton manages all kernel instances. Adding a new kernel requires only creating a single `.cu` file---no header modifications or array synchronization needed. This _open-closed_ design replaces the previous approach of parallel enum/function-pointer arrays that required manual synchronization across four separate data structures.
+
+== RAII Resource Management
+
+All GPU resources are managed via move-only RAII wrappers, ensuring deterministic cleanup and preventing leaks:
+
+#figure(
+  table(
+    columns: (auto, auto, auto, auto),
+    inset: 6pt,
+    align: (left, left, left, left),
+    stroke: none,
+    table.hline(),
+    table.header([*Class*], [*Manages*], [*Acquire*], [*Release*]),
+    table.hline(stroke: 0.5pt),
+    [`CudaMemory<T>`], [Device allocation], [`cudaMalloc`], [`cudaFree`],
+    [`DeviceMatrix`], [2D float matrix], [Delegates to `CudaMemory`], [Automatic],
+    [`CudaStream`], [CUDA stream], [`cudaStreamCreate`], [`cudaStreamDestroy`],
+    [`CudaEvent`], [CUDA event], [`cudaEventCreate`], [`cudaEventDestroy`],
+    [`CublasHandle`], [cuBLAS context], [`cublasCreate`], [`cublasDestroy`],
+    table.hline(),
+  ),
+  caption: [RAII resource wrappers. All classes delete copy operations and implement move semantics, preventing accidental double-free or resource leaks.],
+) <tab:raii>
+
+`DeviceMatrix` composes `CudaMemory<float>` with row/column dimensions, providing `init_random()`, `zero()`, and host-transfer methods. The benchmark code uses `DeviceMatrix` throughout, reducing buffer management from $tilde$10 lines per matrix to a single constructor call.
+
+== Architecture Overview
+
+#figure(
+  kind: image,
+  placement: auto,
+  block(width: 100%, inset: 4pt)[
+    #set text(size: 7pt)
+    #block(width: 100%, inset: 4pt, radius: 3pt, stroke: gray + 1pt, fill: gray.lighten(92%))[
+      #align(center)[#text(weight: "bold", fill: gray)[Application Layer]]
+      #v(2pt)
+      #grid(columns: (1fr, 1fr), gutter: 4pt,
+        block(inset: 3pt, radius: 3pt, stroke: gray + 0.5pt, fill: white)[`bench_single_gpu` \ Correctness + GFLOPS],
+        block(inset: 3pt, radius: 3pt, stroke: gray + 0.5pt, fill: white)[`bench_multi_gpu` \ 6 scaling experiments],
+      )
+    ]
+    #v(3pt)
+    #block(width: 100%, inset: 4pt, radius: 3pt, stroke: rgb("#a855f7") + 1pt, fill: rgb("#a855f7").lighten(92%))[
+      #align(center)[#text(weight: "bold", fill: rgb("#a855f7"))[Tensor Parallelism Layer]]
+      #v(2pt)
+      #grid(columns: (1fr, 1fr, 1fr), gutter: 4pt,
+        block(inset: 3pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*Column Parallel* \ Fwd + Bwd \ `AllGather`/`AllReduce`],
+        block(inset: 3pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*Row Parallel* \ Fwd + Bwd \ `AllReduce`],
+        block(inset: 3pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*MLP Block* \ Col$arrow.r$Row compose \ Overlap pipelining],
+      )
+    ]
+    #v(3pt)
+    #grid(columns: (1fr, 1fr), gutter: 4pt,
+      block(width: 100%, inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 1pt, fill: rgb("#3b82f6").lighten(92%))[
+        #align(center)[#text(weight: "bold", fill: rgb("#3b82f6"))[Kernel Layer]]
+        #v(2pt)
+        `GemmKernel` (abstract base) \
+        `KernelRegistry` (singleton) \
+        9 self-registering kernel classes
+      ],
+      block(width: 100%, inset: 4pt, radius: 3pt, stroke: rgb("#22c55e") + 1pt, fill: rgb("#22c55e").lighten(92%))[
+        #align(center)[#text(weight: "bold", fill: rgb("#22c55e"))[CUDA Resource Layer]]
+        #v(2pt)
+        `CudaMemory<T>`, `DeviceMatrix` \
+        `CudaStream`, `CudaEvent` \
+        `CublasHandle`, `GpuTimer`
+      ],
+    )
+  ],
+  caption: [System architecture. The three layers are loosely coupled: kernels are pluggable via the registry, RAII wrappers manage GPU resources, and the tensor parallelism layer composes both.],
+) <fig:arch>
+
+The tensor parallelism layer (@fig:arch, middle) consumes kernels through the `const GemmKernel&` interface, remaining agnostic to the specific kernel implementation. Gradient GEMM operations (transpose + multiply) are factored into reusable `grad_gemm_at_b` and `grad_gemm_a_bt` helpers, reducing the $tilde$200 lines of duplicated backward-pass code to two composable primitives.
 
 // ═════════════════════════════════════════════════════════════════════
 = Single-GPU Kernel Optimization
@@ -411,154 +524,6 @@ The overlap experiment (@fig:overlap) splits the output along the M dimension in
 On H100 with NVLink, `AllReduce` latency is already very low ($tilde 1$ ms for 256 MB), limiting overlap opportunity. This technique would likely be more beneficial on systems with higher communication latency (e.g., PCIe or cross-node InfiniBand).
 
 // ═════════════════════════════════════════════════════════════════════
-= Software Design
-// ═════════════════════════════════════════════════════════════════════
-
-The codebase is organized into three loosely-coupled layers: a *kernel abstraction layer* with pluggable GEMM implementations, a *CUDA resource layer* with RAII wrappers, and the *tensor parallelism layer* that composes both.
-
-== Kernel Abstraction and Registry
-
-All GEMM kernels---from the naive baseline to cuBLAS---implement a common abstract interface:
-
-#figure(
-  kind: image,
-  scope: "parent",
-  placement: auto,
-  block(width: 75%, inset: 6pt)[
-    #set text(size: 8pt)
-
-    #align(center)[
-      #block(width: 50%, inset: 6pt, radius: 3pt, stroke: rgb("#3b82f6") + 1.5pt, fill: rgb("#3b82f6").lighten(92%))[
-        #align(center)[
-          #text(weight: "bold", size: 9pt)[`GemmKernel`] #text(fill: gray)[ (abstract)] \
-          #line(length: 100%, stroke: 0.5pt + gray)
-          #v(1pt)
-          `+ name() -> const char*` \
-          `+ launch(A, B, C, M, N, K, stream)` \
-          `+ needs_cublas() -> bool` \
-          `+ set_cublas_handle(handle)` \
-        ]
-      ]
-    ]
-    #v(2pt)
-    #align(center)[
-      #grid(columns: (1fr,) * 4, gutter: 4pt,
-        ..range(4).map(_ => align(center)[#text(11pt)[#sym.triangle.b]]))
-    ]
-    #v(1pt)
-    #grid(columns: (1fr, 1fr, 1fr, 1fr), gutter: 5pt,
-      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
-        #text(weight: "bold")[`NaiveKernel`] \ Block: 32$times$32 \ 1 elem/thread
-      ],
-      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
-        #text(weight: "bold")[`SmemTiling`] \ Tile: 32$times$32 \ Shared memory
-      ],
-      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
-        #text(weight: "bold")[`WarpTile`] \ BM$=$BN$=$128 \ Warp-level tiling
-      ],
-      block(inset: 4pt, radius: 3pt, stroke: rgb("#3b82f6") + 0.8pt, fill: white)[
-        #text(weight: "bold")[`CublasKernel`] \ cuBLAS `sgemm` \ Tensor Core path
-      ],
-    )
-    #v(1pt)
-    #align(center)[#text(size: 7pt, fill: gray)[+ CoalescedKernel, BlockTile1DKernel, BlockTile2DKernel, VectorizedKernel]]
-  ],
-  caption: [Kernel class hierarchy. Each concrete kernel encapsulates its CUDA `__global__` function, block/grid configuration, and launch logic. The abstract base provides a uniform `launch()` interface.],
-) <fig:class>
-
-Each kernel file self-registers via a static initializer, eliminating the need for centralized dispatch tables:
-```cpp
-// In naive.cu
-class NaiveKernel : public GemmKernel { ... };
-namespace { static int reg = KernelRegistry::add(
-    std::make_unique<NaiveKernel>()); }
-```
-
-The `KernelRegistry` singleton manages all kernel instances. Adding a new kernel requires only creating a single `.cu` file---no header modifications or array synchronization needed. This _open-closed_ design replaces the previous approach of parallel enum/function-pointer arrays that required manual synchronization across four separate data structures.
-
-== RAII Resource Management
-
-All GPU resources are managed via move-only RAII wrappers, ensuring deterministic cleanup and preventing leaks:
-
-#figure(
-  table(
-    columns: (auto, auto, auto, auto),
-    inset: 6pt,
-    align: (left, left, left, left),
-    stroke: none,
-    table.hline(),
-    table.header([*Class*], [*Manages*], [*Acquire*], [*Release*]),
-    table.hline(stroke: 0.5pt),
-    [`CudaMemory<T>`], [Device allocation], [`cudaMalloc`], [`cudaFree`],
-    [`DeviceMatrix`], [2D float matrix], [Delegates to `CudaMemory`], [Automatic],
-    [`CudaStream`], [CUDA stream], [`cudaStreamCreate`], [`cudaStreamDestroy`],
-    [`CudaEvent`], [CUDA event], [`cudaEventCreate`], [`cudaEventDestroy`],
-    [`CublasHandle`], [cuBLAS context], [`cublasCreate`], [`cublasDestroy`],
-    table.hline(),
-  ),
-  caption: [RAII resource wrappers. All classes delete copy operations and implement move semantics, preventing accidental double-free or resource leaks.],
-) <tab:raii>
-
-`DeviceMatrix` composes `CudaMemory<float>` with row/column dimensions, providing `init_random()`, `zero()`, and host-transfer methods. The benchmark code uses `DeviceMatrix` throughout, reducing buffer management from $tilde$10 lines per matrix to a single constructor call.
-
-== Architecture Overview
-
-#figure(
-  kind: image,
-  scope: "parent",
-  placement: auto,
-  block(width: 80%, inset: 6pt)[
-    #set text(size: 8pt)
-    #align(center)[
-      #block(width: 80%, inset: 6pt, radius: 3pt, stroke: gray + 1pt, fill: gray.lighten(92%))[
-        #align(center)[#text(weight: "bold", fill: gray)[Application Layer]]
-        #v(2pt)
-        #grid(columns: (1fr, 1fr), gutter: 6pt,
-          block(inset: 4pt, radius: 3pt, stroke: gray + 0.5pt, fill: white)[`bench_single_gpu` \ Correctness + GFLOPS],
-          block(inset: 4pt, radius: 3pt, stroke: gray + 0.5pt, fill: white)[`bench_multi_gpu` \ 6 scaling experiments],
-        )
-      ]
-    ]
-    #v(2pt)
-    #align(center)[#text(11pt)[#sym.arrow.b]]
-    #v(1pt)
-    #align(center)[
-      #block(width: 80%, inset: 6pt, radius: 3pt, stroke: rgb("#a855f7") + 1pt, fill: rgb("#a855f7").lighten(92%))[
-        #align(center)[#text(weight: "bold", fill: rgb("#a855f7"))[Tensor Parallelism Layer]]
-        #v(2pt)
-        #grid(columns: (1fr, 1fr, 1fr), gutter: 5pt,
-          block(inset: 4pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*Column Parallel* \ Fwd + Bwd \ `AllGather`/`AllReduce`],
-          block(inset: 4pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*Row Parallel* \ Fwd + Bwd \ `AllReduce`],
-          block(inset: 4pt, radius: 3pt, stroke: rgb("#a855f7") + 0.5pt, fill: white)[*MLP Block* \ Col$arrow.r$Row compose \ Overlap pipelining],
-        )
-      ]
-    ]
-    #v(2pt)
-    #align(center)[#text(11pt)[#sym.arrow.b]]
-    #v(1pt)
-    #grid(columns: (1fr, 1fr), gutter: 8pt,
-      block(inset: 6pt, radius: 3pt, stroke: rgb("#3b82f6") + 1pt, fill: rgb("#3b82f6").lighten(92%))[
-        #align(center)[#text(weight: "bold", fill: rgb("#3b82f6"))[Kernel Layer]]
-        #v(2pt)
-        `GemmKernel` (abstract base) \
-        `KernelRegistry` (singleton) \
-        9 self-registering kernel classes
-      ],
-      block(inset: 6pt, radius: 3pt, stroke: rgb("#22c55e") + 1pt, fill: rgb("#22c55e").lighten(92%))[
-        #align(center)[#text(weight: "bold", fill: rgb("#22c55e"))[CUDA Resource Layer]]
-        #v(2pt)
-        `CudaMemory<T>`, `DeviceMatrix` \
-        `CudaStream`, `CudaEvent` \
-        `CublasHandle`, `GpuTimer`
-      ],
-    )
-  ],
-  caption: [System architecture. The three layers are loosely coupled: kernels are pluggable via the registry, RAII wrappers manage GPU resources, and the tensor parallelism layer composes both.],
-) <fig:arch>
-
-The tensor parallelism layer (@fig:arch, middle) consumes kernels through the `const GemmKernel&` interface, remaining agnostic to the specific kernel implementation. Gradient GEMM operations (transpose + multiply) are factored into reusable `grad_gemm_at_b` and `grad_gemm_a_bt` helpers, reducing the $tilde$200 lines of duplicated backward-pass code to two composable primitives.
-
-// ═════════════════════════════════════════════════════════════════════
 = Conclusion
 // ═════════════════════════════════════════════════════════════════════
 
@@ -577,3 +542,33 @@ These results underscore that efficient distributed deep learning requires *co-o
 // ═════════════════════════════════════════════════════════════════════
 
 #bibliography("references.bib", style: "ieee")
+
+// ═════════════════════════════════════════════════════════════════════
+// Appendix
+// ═════════════════════════════════════════════════════════════════════
+
+= Appendix
+
+#figure(
+  table(
+    columns: (auto, auto),
+    inset: 6pt,
+    align: (left, left),
+    stroke: none,
+    table.hline(),
+    table.header([*Component*], [*Specification*]),
+    table.hline(stroke: 0.5pt),
+    [GPU], [8 $times$ NVIDIA H100 80GB HBM3 (SXM5)],
+    [GPU Interconnect], [NVLink 4.0, all-to-all NV18 (900 GB/s bidirectional per GPU)],
+    [GPU Compute], [132 SMs, 1980 MHz boost, sm\_90, 33.5 TFLOPS FP32 peak],
+    [GPU Memory], [80 GB HBM3, $tilde$3.35 TB/s bandwidth per GPU],
+    [CPU], [2 $times$ Intel Xeon Gold 6448Y (32 cores / 64 threads each, 128 threads total)],
+    [System Memory], [2 TB DDR5],
+    [OS], [Ubuntu 24.04.4 LTS (kernel 5.14.0)],
+    [CUDA Toolkit], [13.1],
+    [NCCL], [2.29.3],
+    [GPU Driver], [550.90.07],
+    table.hline(),
+  ),
+  caption: [Hardware and software configuration.],
+) <tab:setup>
