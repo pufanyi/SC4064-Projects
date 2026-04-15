@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/dracula.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/dracula.css">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/dracula.min.css">
   <style>
     :root {
       --dracula-bg: #282a36;
@@ -28,7 +28,7 @@
     .reveal h3 { font-size: 1.05em; color: var(--dracula-cyan); }
     .reveal ul { text-align: left; }
     .reveal strong { color: var(--dracula-pink); }
-    .reveal code { color: var(--dracula-green); }
+    .reveal :not(pre) > code { color: var(--dracula-green); }
     .reveal .subtitle {
       font-size: 0.6em;
       color: var(--dracula-cyan);
@@ -106,7 +106,7 @@
       text-align: center;
       font-size: 0.7em;
     }
-    .reveal pre code { font-size: 0.75em; border-radius: 6px; }
+    .reveal pre code { font-size: 0.95em; border-radius: 6px; }
     .reveal .progress { color: var(--dracula-pink); height: 4px; }
     .reveal .badge {
       display: inline-block;
@@ -322,6 +322,159 @@
     <div class="flow-arrow">&rarr;</div>
     <div class="flow-box" style="border-color:var(--dracula-purple);">cuBLAS<br><small>~53.3k GFLOPS</small></div>
   </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- KERNEL CODE DEEP-DIVE (sub-slides) -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Kernel 1: Naive</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">1 thread &rarr; 1 element &mdash; no data reuse</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__global__ void gemm_naive(const float* A, const float* B,
+                           float* C, int M, int N, int K) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < M && col < N) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; k++)
+            sum += A[row * K + k] * B[k * N + col];
+        C[row * N + col] = sum;
+    }
+}
+// grid(N/32, M/32), block(32, 32)
+    </code></pre>
+    <p style="font-size:0.65em;"><span class="badge pink">Baseline</span> Every FMA = 2 global loads &rarr; entirely <strong>memory-bound</strong></p>
+  </section>
+
+  <section>
+    <h2>Kernel 2: Coalesced</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">Stride-1 access &mdash; only mapping change</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// Uncoalesced: threadIdx.x &rarr; row  (stride-N access)
+int row = blockIdx.x * blockDim.x + threadIdx.x;
+int col = blockIdx.y * blockDim.y + threadIdx.y;
+
+// Coalesced: threadIdx.x &rarr; col  (stride-1 access)
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+    </code></pre>
+    <div class="highlight-box" style="font-size:0.7em;">
+      Same arithmetic &mdash; adjacent threads read <strong>adjacent columns</strong><br>
+      1 &times; 128B transaction instead of 32 &times; 32B transactions
+    </div>
+    <p style="font-size:0.65em;"><span class="badge green">12.7&times;</span> speedup from a <em>two-line swap</em></p>
+  </section>
+
+  <section>
+    <h2>Kernel 3: Shared Memory Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">32&times;32 tiles &mdash; each element reused 32&times;</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__shared__ float As[32][32], Bs[32][32];
+float sum = 0.0f;
+
+for (int t = 0; t < K; t += 32) {
+    As[ty][tx] = A[row * K + t + tx];   // cooperative load
+    Bs[ty][tx] = B[(t + ty) * N + col];
+    __syncthreads();
+
+    for (int k = 0; k < 32; k++)
+        sum += As[ty][k] * Bs[k][tx];   // smem reads
+    __syncthreads();
+}
+C[row * N + col] = sum;
+    </code></pre>
+    <p style="font-size:0.65em;"><span class="badge green">32&times; less traffic</span> OI: 0.25 &rarr; ~8 FLOP/byte</p>
+  </section>
+
+  <section>
+    <h2>Kernel 4: 1D Block Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">TM=8 rows per thread &mdash; thread coarsening along M</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// BM=64, BN=64, BK=8, TM=8
+__shared__ float As[64][8], Bs[8][64];
+float accum[TM] = {0.0f};          // 8 accumulators
+
+for (int t = 0; t < K; t += BK) {
+    /* cooperative load As, Bs ... */
+    __syncthreads();
+    for (int k = 0; k < BK; k++) {
+        float b_val = Bs[k][tx];    // load B once
+        for (int m = 0; m < TM; m++)
+            accum[m] += As[ty*TM + m][k] * b_val;  // reuse &times;8
+    }
+    __syncthreads();
+}
+    </code></pre>
+    <p style="font-size:0.65em;">block(64, 8) = 512 threads &mdash; <strong>1 B value &times; 8 A values</strong> per inner step</p>
+  </section>
+
+  <section>
+    <h2>Kernel 5: 2D Block Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">8&times;8 register block &mdash; outer product per thread</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// BM=BN=128, BK=8, TM=TN=8
+float accum[8][8] = {{0.0f}};       // 64 accumulators
+float a_cache[8], b_cache[8];       // register cache
+
+for (int k = 0; k < BK; k++) {
+    for (int m = 0; m < TM; m++)
+        a_cache[m] = As[thread_row * TM + m][k];
+    for (int n = 0; n < TN; n++)
+        b_cache[n] = Bs[k][thread_col * TN + n];
+
+    for (int m = 0; m < TM; m++)    // outer product
+        for (int n = 0; n < TN; n++)
+            accum[m][n] += a_cache[m] * b_cache[n];
+}
+    </code></pre>
+    <p style="font-size:0.65em;"><span class="badge green">8&times; fewer smem reads</span> 16 loads &rarr; 64 FMAs per k-step</p>
+  </section>
+
+  <section>
+    <h2>Kernel 6: Vectorized</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);"><code>float4</code> loads + transposed smem layout</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__shared__ float As[BK][BM];  // transposed: As[k][m]
+
+// Vectorized load A &rarr; transposed store
+float4 a4 = reinterpret_cast&lt;const float4*&gt;(&A[gr*K + gc])[0];
+As[col*4 + 0][row] = a4.x;   // transpose on write
+As[col*4 + 1][row] = a4.y;
+As[col*4 + 2][row] = a4.z;
+As[col*4 + 3][row] = a4.w;
+
+// Vectorized store C
+float4 out = {accum[m][n], accum[m][n+1],
+              accum[m][n+2], accum[m][n+3]};
+reinterpret_cast&lt;float4*&gt;(&C[gr*N + gc])[0] = out;
+    </code></pre>
+    <p style="font-size:0.65em;">LDG.128: <strong>4&times; fewer instructions</strong> &mdash; transposed smem eliminates bank conflicts</p>
+  </section>
+
+  <section>
+    <h2>Kernel 7: Warp Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">Block &rarr; Warp &rarr; Thread hierarchy</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// Block: 128&times;128  |  Warp: 32&times;64  |  Thread: 8&times;8
+int warp_id = tid / 32, lane_id = tid % 32;
+int warp_row = warp_id / (BN/WN);      // 4 warp rows
+int warp_col = warp_id % (BN/WN);      // 2 warp cols
+int thr_row = lane_id / (WN/TN);       // within warp
+int thr_col = lane_id % (WN/TN);
+
+for (int k = 0; k < BK; k++) {
+    for (int m = 0; m < TM; m++)
+        a_cache[m] = As[k][warp_row*WM + thr_row*TM + m];
+    for (int n = 0; n < TN; n++)
+        b_cache[n] = Bs[k][warp_col*WN + thr_col*TN + n];
+    // ... outer product into accum[8][8]
+}
+    </code></pre>
+    <p style="font-size:0.65em;">Warp working set: 32&times;8 + 8&times;64 = <strong>768 floats</strong> &mdash; fits L1 &rarr; better locality</p>
+  </section>
 </section>
 
 <!-- ============================================================ -->
