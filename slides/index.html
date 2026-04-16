@@ -7,7 +7,7 @@
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reset.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/reveal.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/dist/theme/dracula.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/dracula.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/reveal.js@5.1.0/plugin/highlight/monokai.css">
   <style>
     :root {
       --dracula-bg: #282a36;
@@ -21,14 +21,14 @@
       --dracula-red: #ff5555;
       --dracula-comment: #6272a4;
       --dracula-current: #44475a;
-      --r-main-font-size: 28px;
+      --r-main-font-size: 36px;
     }
     .reveal h1, .reveal h2, .reveal h3 { text-transform: none; }
     .reveal h2 { font-size: 1.4em; }
     .reveal h3 { font-size: 1.05em; color: var(--dracula-cyan); }
     .reveal ul { text-align: left; }
     .reveal strong { color: var(--dracula-pink); }
-    .reveal code { color: var(--dracula-green); }
+    .reveal :not(pre) > code { color: var(--dracula-green); }
     .reveal .subtitle {
       font-size: 0.6em;
       color: var(--dracula-cyan);
@@ -106,7 +106,7 @@
       text-align: center;
       font-size: 0.7em;
     }
-    .reveal pre code { font-size: 0.75em; border-radius: 6px; }
+    .reveal pre code { font-size: 0.95em; border-radius: 6px; }
     .reveal .progress { color: var(--dracula-pink); height: 4px; }
     .reveal .badge {
       display: inline-block;
@@ -228,7 +228,7 @@
 <!-- ============================================================ -->
 <!-- BACKGROUND: MEMORY HIERARCHY -->
 <!-- ============================================================ -->
-<section>
+<!-- <section>
   <h2>GPU Memory Hierarchy (H100)</h2>
   <div class="two-col">
     <div>
@@ -257,7 +257,7 @@
   <div class="highlight-box">
     Each kernel optimization moves data access from a slower to a faster level.
   </div>
-</section>
+</section> -->
 
 <!-- ============================================================ -->
 <!-- SYSTEM DESIGN -->
@@ -325,6 +325,192 @@
 </section>
 
 <!-- ============================================================ -->
+<!-- KERNEL CODE DEEP-DIVE (sub-slides) -->
+<!-- ============================================================ -->
+<section>
+  <section>
+    <h2>Kernel 1: Naive</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">1 thread &rarr; 1 element &mdash; no data reuse</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__global__ void gemm_naive(const float* A, const float* B,
+                           float* C, int M, int N, int K) {
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
+
+    if (row < M && col < N) {
+        float sum = 0.0f;
+        for (int k = 0; k < K; k++) {
+            sum += A[row * K + k] * B[k * N + col];
+        }
+        C[row * N + col] = sum;
+    }
+}
+// grid(N/32, M/32), block(32, 32)
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li><code>threadIdx.x &rarr; row</code>: adjacent threads access <strong>different rows</strong> &rarr; stride-N, uncoalesced</li>
+      <li>Every FMA = 2 global loads &rarr; OI &asymp; 0.25 FLOP/byte</li>
+      <li><span class="badge pink">Baseline</span> entirely <strong>memory-bound</strong></li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 2: Coalesced</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">Stride-1 access &mdash; only mapping change</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// Uncoalesced: threadIdx.x &rarr; row  (stride-N access)
+int row = blockIdx.x * blockDim.x + threadIdx.x;
+int col = blockIdx.y * blockDim.y + threadIdx.y;
+
+// Coalesced: threadIdx.x &rarr; col  (stride-1 access)
+int col = blockIdx.x * blockDim.x + threadIdx.x;
+int row = blockIdx.y * blockDim.y + threadIdx.y;
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Swap <code>threadIdx.x &rarr; col</code>: adjacent threads read <strong>adjacent columns</strong> (stride-1)</li>
+      <li>1 &times; 128 B transaction instead of 32 &times; 32 B transactions</li>
+      <li>Same arithmetic, zero extra work &rarr; <span class="badge green">12.7&times;</span> speedup</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 3: Shared Memory Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">32&times;32 tiles &mdash; each element reused 32&times;</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__shared__ float As[32][32], Bs[32][32];
+float sum = 0.0f;
+
+for (int t = 0; t < K; t += 32) {
+    As[ty][tx] = A[row * K + t + tx];   // cooperative load
+    Bs[ty][tx] = B[(t + ty) * N + col];
+    __syncthreads();
+
+    for (int k = 0; k < 32; k++) {
+        sum += As[ty][k] * Bs[k][tx];   // smem reads
+    }
+    __syncthreads();
+}
+C[row * N + col] = sum;
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>32&times;32 block cooperatively loads tile into <code>__shared__</code> memory</li>
+      <li>Each element reused 32&times; &rarr; <span class="badge green">32&times; less</span> global traffic</li>
+      <li>OI: 0.25 &rarr; ~8 FLOP/byte &mdash; approaching compute-bound</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 4: 1D Block Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">TM=8 rows per thread &mdash; thread coarsening along M</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// BM=64, BN=64, BK=8, TM=8
+__shared__ float As[64][8], Bs[8][64];
+float accum[TM] = {0.0f};          // 8 accumulators
+
+for (int t = 0; t < K; t += BK) {
+    /* cooperative load As, Bs ... */
+    __syncthreads();
+    for (int k = 0; k < BK; k++) {
+        float b_val = Bs[k][tx];    // load B once
+        for (int m = 0; m < TM; m++) {
+            accum[m] += As[ty*TM + m][k] * b_val;  // reuse &times;8
+        }
+    }
+    __syncthreads();
+}
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Each thread computes TM=8 rows &rarr; 8 accumulators in registers</li>
+      <li>Load <code>b_val</code> once, reuse across 8 A values &rarr; better smem reuse</li>
+      <li>block(64, 8) = 512 threads, tile 64&times;64</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 5: 2D Block Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">8&times;8 register block &mdash; outer product per thread</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// BM=BN=128, BK=8, TM=TN=8
+float accum[8][8] = {{0.0f}};       // 64 accumulators
+float a_cache[8], b_cache[8];       // register cache
+
+for (int k = 0; k < BK; k++) {
+    for (int m = 0; m < TM; m++) {
+        a_cache[m] = As[thread_row * TM + m][k];
+    }
+    for (int n = 0; n < TN; n++) {
+        b_cache[n] = Bs[k][thread_col * TN + n];
+    }
+
+    for (int m = 0; m < TM; m++) {  // outer product
+        for (int n = 0; n < TN; n++) {
+            accum[m][n] += a_cache[m] * b_cache[n];
+        }
+    }
+}
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>8&times;8 register block per thread &rarr; 64 accumulators</li>
+      <li>Outer product: 8 + 8 = 16 smem loads &rarr; 64 FMAs per k-step</li>
+      <li><span class="badge green">8&times; fewer smem reads</span> vs. 1D tiling</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 6: Vectorized</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);"><code>float4</code> loads + transposed smem layout</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+__shared__ float As[BK][BM];  // transposed: As[k][m]
+
+// Vectorized load A &rarr; transposed store
+float4 a4 = reinterpret_cast&lt;const float4*&gt;(&A[gr*K + gc])[0];
+As[col*4 + 0][row] = a4.x;   // transpose on write
+As[col*4 + 1][row] = a4.y;
+As[col*4 + 2][row] = a4.z;
+As[col*4 + 3][row] = a4.w;
+
+// Vectorized store C
+float4 out = {accum[m][n], accum[m][n+1],
+              accum[m][n+2], accum[m][n+3]};
+reinterpret_cast&lt;float4*&gt;(&C[gr*N + gc])[0] = out;
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li><code>float4</code> (LDG.128): 1 instruction loads 4 floats &rarr; <strong>4&times; fewer load instructions</strong></li>
+      <li>Transposed smem layout <code>As[k][m]</code> eliminates bank conflicts</li>
+      <li>Vectorized store to C avoids 4 separate writes</li>
+    </ul>
+  </section>
+
+  <section>
+    <h2>Kernel 7: Warp Tiling</h2>
+    <p style="font-size:0.7em; color:var(--dracula-comment);">Block &rarr; Warp &rarr; Thread hierarchy</p>
+    <pre><code class="language-cpp" data-trim data-noescape>
+// Block: 128&times;128  |  Warp: 32&times;64  |  Thread: 8&times;8
+int warp_id = tid / 32, lane_id = tid % 32;
+int warp_row = warp_id / (BN/WN);      // 4 warp rows
+int warp_col = warp_id % (BN/WN);      // 2 warp cols
+int thr_row = lane_id / (WN/TN);       // within warp
+int thr_col = lane_id % (WN/TN);
+
+for (int k = 0; k < BK; k++) {
+    for (int m = 0; m < TM; m++) {
+        a_cache[m] = As[k][warp_row*WM + thr_row*TM + m];
+    }
+    for (int n = 0; n < TN; n++) {
+        b_cache[n] = Bs[k][warp_col*WN + thr_col*TN + n];
+    }
+    // ... outer product into accum[8][8]
+}
+    </code></pre>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Three-level tiling: Block (128&times;128) &rarr; Warp (32&times;64) &rarr; Thread (8&times;8)</li>
+      <li>Warp working set = 768 floats &rarr; fits in L1 cache</li>
+      <li>Threads in same warp access nearby smem &rarr; better spatial locality</li>
+    </ul>
+  </section>
+</section>
+
+<!-- ============================================================ -->
 <!-- BACKGROUND: ROOFLINE -->
 <!-- ============================================================ -->
 <section>
@@ -369,6 +555,105 @@
       </div>
     </div>
   </section>
+
+  <!-- TP Math: Column Parallel -->
+  <section>
+    <h2>Column Parallel &mdash; Math</h2>
+    <div style="font-size:0.7em; text-align:left;">
+      <p style="margin:0.3em 0;">Given \(Y = XW\) with \(X \in \mathbb{R}^{m \times k}\), \(W \in \mathbb{R}^{k \times n}\).
+        Split \(W\) <strong>column-wise</strong> across \(p\) GPUs:</p>
+      <p style="text-align:center; margin:0.2em 0;">
+        \(W = \bigl[\, W_1 \;\big|\; \cdots \;\big|\; W_p \,\bigr], \; W_i \in \mathbb{R}^{k \times n/p}\)
+      </p>
+      <p style="margin:0.3em 0;">Each GPU holds full \(X\) and computes \(Y_i = X W_i \in \mathbb{R}^{m \times n/p}\).
+        &ensp; Full output: \(Y = \bigl[\, Y_1 \;\big|\; \cdots \;\big|\; Y_p \,\bigr]\).</p>
+      <div class="highlight-box" style="border-color:var(--dracula-cyan); font-size:0.95em; padding:0.4em 0.7em; margin-top:0.4em;">
+        <p style="margin:0 0 0.3em 0;"><strong>Forward:</strong> <span class="badge cyan">AllGather</span> to collect \(Y_i\) &rarr; \(Y\).</p>
+        <p style="margin:0 0 0.3em 0;"><strong>Bwd (dW):</strong> \(\frac{\partial L}{\partial W_i} = X^\top \frac{\partial L}{\partial Y_i}\) &mdash; <span class="badge green">no comm</span></p>
+        <p style="margin:0;"><strong>Bwd (dX):</strong> \(\frac{\partial L}{\partial X} = \sum_{i=1}^{p} \frac{\partial L}{\partial Y_i} W_i^\top\) &rarr; <span class="badge orange">AllReduce</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TP Visual: Column Parallel -->
+  <section>
+    <h2>Column Parallel &mdash; Visual</h2>
+    <img src="img/TP_col.png" alt="Column-wise Tensor Parallelism">
+  </section>
+
+  <!-- TP Math: Row Parallel -->
+  <section>
+    <h2>Row Parallel &mdash; Math</h2>
+    <div style="font-size:0.7em; text-align:left;">
+      <p style="margin:0.3em 0;">Split \(W\) <strong>row-wise</strong>, \(X\) <strong>column-wise</strong>: &ensp;
+        \(W = \begin{bmatrix} W_1 \\ \vdots \\ W_p \end{bmatrix}\!, \; W_i \in \mathbb{R}^{k/p \times n}, \quad
+        X = \bigl[\, X_1 \;\big|\; \cdots \;\big|\; X_p \,\bigr], \; X_i \in \mathbb{R}^{m \times k/p}\)
+      </p>
+      <p style="margin:0.3em 0;">Each GPU computes a <strong>partial result</strong>: \(\;\tilde{Y}_i = X_i W_i \in \mathbb{R}^{m \times n}\).
+        &ensp; Full output: \(Y = \sum_{i=1}^{p} \tilde{Y}_i\).</p>
+      <div class="highlight-box" style="border-color:var(--dracula-pink); font-size:0.95em; padding:0.4em 0.7em; margin-top:0.4em;">
+        <p style="margin:0 0 0.3em 0;"><strong>Forward:</strong> <span class="badge orange">AllReduce</span> to sum \(\tilde{Y}_i\) &rarr; \(Y\).</p>
+        <p style="margin:0 0 0.3em 0;"><strong>Bwd (dW):</strong> \(\frac{\partial L}{\partial W_i} = X_i^\top \frac{\partial L}{\partial Y}\) &mdash; <span class="badge green">no comm</span></p>
+        <p style="margin:0;"><strong>Bwd (dX):</strong> \(\frac{\partial L}{\partial X_i} = \frac{\partial L}{\partial Y} W_i^\top\) &mdash; <span class="badge green">no comm</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- TP Visual: Row Parallel -->
+  <section>
+    <h2>Row Parallel &mdash; Visual</h2>
+    <img src="img/TP_row.png" alt="Row-wise Tensor Parallelism">
+  </section>
+
+  <!-- TP Math: Column + Row Fusion -->
+  <section>
+    <h2>Why Column &rarr; Row Fuses Perfectly</h2>
+    <div style="font-size:0.75em; text-align:left;">
+      <p>For the MLP \(Y = \sigma(X W_1) \, W_2\), apply column parallel to \(W_1\) and row parallel to \(W_2\):</p>
+      <div class="two-col" style="margin:0.5em 0;">
+        <div>
+          <h3 style="margin-top:0;">Step 1: Column on \(W_1\)</h3>
+          <p>\(Z_i = X \, W_{1,i} \in \mathbb{R}^{m \times n/p}\)</p>
+          <p>\(H_i = \sigma(Z_i) \in \mathbb{R}^{m \times n/p}\)</p>
+          <p style="color:var(--dracula-green);">Activation is <strong>element-wise</strong>, so \(\sigma\) applies without communication.</p>
+        </div>
+        <div>
+          <h3 style="margin-top:0; color:var(--dracula-pink);">Step 2: Row on \(W_2\)</h3>
+          <p>Row parallel needs \(X = [X_1 | \cdots | X_p]\).</p>
+          <p>Column output already gives us \(H = [H_1 | \cdots | H_p]\).</p>
+          <p style="color:var(--dracula-green);"><strong>Shapes match!</strong> Set \(X_i = H_i\).</p>
+        </div>
+      </div>
+      <p style="text-align:center;">\(Y = \sum_{i=1}^{p} H_i \, W_{2,i} \xrightarrow{\text{AllReduce}} Y\)</p>
+      <div class="highlight-box" style="border-color:var(--dracula-green);">
+        <strong>Result:</strong> The entire MLP forward needs only <strong>1 AllReduce</strong> at the end &mdash; no AllGather between the two layers.
+      </div>
+    </div>
+  </section>
+
+  <!-- TP Math: Communication Cost -->
+  <section>
+    <h2>Communication Cost Analysis</h2>
+    <div style="font-size:0.75em; text-align:left;">
+      <p>For matrices of size \(m \times n\) with \(p\) GPUs:</p>
+      <table style="font-size:0.85em;">
+        <thead><tr><th>Collective</th><th>Data Volume per GPU</th><th>Steps (Ring)</th></tr></thead>
+        <tbody>
+          <tr><td><span class="badge cyan">AllGather</span></td><td>\(\frac{p-1}{p} \cdot m n\) elements</td><td>\(p - 1\)</td></tr>
+          <tr><td><span class="badge orange">AllReduce</span></td><td>\(2 \cdot \frac{p-1}{p} \cdot m n\) elements</td><td>\(2(p - 1)\)</td></tr>
+        </tbody>
+      </table>
+      <p style="margin-top:0.6em;">Compute per GPU: \(\displaystyle \frac{2mnk}{p}\) FLOPs. Communication: \(O(mn)\) elements.</p>
+      <p>The <strong>comm-compute ratio</strong>:</p>
+      <p style="text-align:center; font-size:1.1em;">
+        \(\displaystyle \frac{T_{\text{comm}}}{T_{\text{comp}}} \propto \frac{p}{k}\)
+      </p>
+      <div class="highlight-box" style="border-color:var(--dracula-orange);">
+        Ratio <strong>decreases</strong> with larger hidden dimension \(k\) and <strong>increases</strong> with more GPUs \(p\) &mdash; TP is most effective when \(k \gg p\).
+      </div>
+    </div>
+  </section>
+
   <section>
     <h2>Parallel MLP Block</h2>
     <p style="font-size:0.8em;">\(\text{MLP}(X) = \sigma(X W_1) W_2\)</p>
@@ -433,34 +718,11 @@
     <h2>Strong Scaling</h2>
     <div class="img-text-row">
       <img src="img/strong_scaling.png" alt="Strong scaling" style="max-height:50vh;">
-      <div>
-        <div class="stat-grid">
-          <div class="stat-card">
-            <div class="value">7.6&times;</div>
-            <div class="label">Speedup<br>N=32768, 8 GPUs</div>
-          </div>
-          <div class="stat-card">
-            <div class="value">94.5%</div>
-            <div class="label">Parallel efficiency<br>N=32768, 8 GPUs</div>
-          </div>
-          <div class="stat-card">
-            <div class="value" style="color:var(--dracula-pink);">400</div>
-            <div class="label">Aggregate TFLOPS<br>8&times;H100</div>
-          </div>
-          <div class="stat-card">
-            <div class="value">4.1&times;</div>
-            <div class="label">Speedup<br>N=8192, 8 GPUs</div>
-          </div>
-        </div>
-      </div>
     </div>
   </section>
   <section>
     <h2>Parallel Efficiency</h2>
     <img src="img/strong_scaling_efficiency.png" alt="Parallel efficiency">
-    <p style="font-size:0.7em;">
-      Super-linear at p=2 for N=8192 &mdash; halved working set fits better in L2 cache
-    </p>
   </section>
 </section>
 
@@ -469,23 +731,8 @@
 <!-- ============================================================ -->
 <section>
   <h2>Weak Scaling</h2>
-  <div class="img-text-row">
     <img src="img/weak_scaling.png" alt="Weak scaling" style="max-height:50vh;">
-    <div>
-      <p>Fixed <strong>2048&times;2048</strong> per GPU</p>
-      <div class="stat-card" style="margin:0.5em 0;">
-        <div class="value">3.1&times;</div>
-        <div class="label">Throughput scaling<br>39.5 &rarr; 123.2 TFLOPS</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" style="color:var(--dracula-orange);">2.6&times;</div>
-        <div class="label">Time overhead<br>0.44 &rarr; 1.12 ms</div>
-      </div>
-      <p style="font-size:0.7em; color:var(--dracula-comment); margin-top:0.5em;">
-        Sub-linear due to AllGather communication overhead growing with participants
-      </p>
-    </div>
-  </div>
+    <p>Fixed <strong>2048&times;2048</strong> per GPU</p>
 </section>
 
 <!-- ============================================================ -->
@@ -494,25 +741,9 @@
 <section>
   <section>
     <h2>Comm-Compute Ratio vs. Size</h2>
-    <div class="img-text-row">
-      <img src="img/comm_compute_ratio_size.png" alt="Ratio vs size" style="max-height:48vh;">
-      <div>
-        <p>Cubic compute vs. quadratic comm:</p>
-        <div class="stat-card" style="margin:0.4em 0;">
-          <div class="value" style="color:var(--dracula-red);">0.99</div>
-          <div class="label">Ratio at N=2048<br>comm &asymp; compute</div>
-        </div>
-        <div class="stat-card">
-          <div class="value">0.07</div>
-          <div class="label">Ratio at N=32768<br>compute dominates</div>
-        </div>
-        <p style="font-size:0.7em; color:var(--dracula-comment); margin-top:0.5em;">
-          TP is most effective at large N (e.g., GPT-3 hidden dim 12288&ndash;16384)
-        </p>
-      </div>
-    </div>
+    <img src="img/comm_compute_ratio_size.png" alt="Ratio vs size" style="max-height:48vh;">
   </section>
-  <section>
+  <!-- <section>
     <h2>Comm-Compute Ratio vs. Kernel</h2>
     <img src="img/comm_compute_ratio_kernel.png" alt="Ratio vs kernel" style="max-height:42vh;">
     <div class="highlight-box" style="font-size:0.75em;">
@@ -524,7 +755,7 @@
       <div class="flow-arrow">&rarr;&rarr;&rarr;</div>
       <div class="flow-box" style="border-color:var(--dracula-red);">cuBLAS<br><small>comm = 85% of compute</small></div>
     </div>
-  </section>
+  </section> -->
 </section>
 
 <!-- ============================================================ -->
@@ -549,7 +780,7 @@
       </div>
     </div>
   </section>
-  <section>
+  <!-- <section>
     <h2>Communication-Compute Overlap</h2>
     <div class="img-text-row">
       <img src="img/overlap_comparison.png" alt="Overlap comparison" style="max-height:48vh;">
@@ -565,13 +796,13 @@
         </div>
       </div>
     </div>
-  </section>
+  </section> -->
 </section>
 
 <!-- ============================================================ -->
 <!-- CONCLUSION -->
 <!-- ============================================================ -->
-<section>
+<!-- <section>
   <h2>Takeaways</h2>
   <div style="text-align:left; font-size:0.75em;">
     <div style="display:flex; gap:1em; margin-bottom:0.6em;">
@@ -597,14 +828,14 @@
       Distributed DL requires <strong>co-optimization</strong> of compute &amp; communication.
     </div>
   </div>
-</section>
+</section> -->
 
 <!-- ============================================================ -->
 <!-- END -->
 <!-- ============================================================ -->
 <section>
   <h2 style="margin-bottom:0.8em;">Thank You</h2>
-  <div class="stat-grid" style="max-width:550px; margin:0 auto;">
+  <!-- <div class="stat-grid" style="max-width:550px; margin:0 auto;">
     <div class="stat-card">
       <div class="value" style="color:var(--dracula-purple);">7</div>
       <div class="label">CUDA Kernels</div>
@@ -621,7 +852,7 @@
       <div class="value" style="color:var(--dracula-green);">400</div>
       <div class="label">TFLOPS</div>
     </div>
-  </div>
+  </div> -->
   <br>
   <p style="font-size:0.5em; color:var(--dracula-comment);">
     Aryan Jain &bull; Fanyi Pu &bull; Ze Hong Maxwell Au &ensp;|&ensp; NTU SC4064
