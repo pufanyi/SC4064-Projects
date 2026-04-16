@@ -21,7 +21,7 @@
       --dracula-red: #ff5555;
       --dracula-comment: #6272a4;
       --dracula-current: #44475a;
-      --r-main-font-size: 28px;
+      --r-main-font-size: 36px;
     }
     .reveal h1, .reveal h2, .reveal h3 { text-transform: none; }
     .reveal h2 { font-size: 1.4em; }
@@ -334,19 +334,24 @@
     <pre><code class="language-cpp" data-trim data-noescape>
 __global__ void gemm_naive(const float* A, const float* B,
                            float* C, int M, int N, int K) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int row = blockIdx.x * blockDim.x + threadIdx.x;
+    int col = blockIdx.y * blockDim.y + threadIdx.y;
 
     if (row < M && col < N) {
         float sum = 0.0f;
-        for (int k = 0; k < K; k++)
+        for (int k = 0; k < K; k++) {
             sum += A[row * K + k] * B[k * N + col];
+        }
         C[row * N + col] = sum;
     }
 }
 // grid(N/32, M/32), block(32, 32)
     </code></pre>
-    <p style="font-size:0.65em;"><span class="badge pink">Baseline</span> Every FMA = 2 global loads &rarr; entirely <strong>memory-bound</strong></p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li><code>threadIdx.x &rarr; row</code>: adjacent threads access <strong>different rows</strong> &rarr; stride-N, uncoalesced</li>
+      <li>Every FMA = 2 global loads &rarr; OI &asymp; 0.25 FLOP/byte</li>
+      <li><span class="badge pink">Baseline</span> entirely <strong>memory-bound</strong></li>
+    </ul>
   </section>
 
   <section>
@@ -361,11 +366,11 @@ int col = blockIdx.y * blockDim.y + threadIdx.y;
 int col = blockIdx.x * blockDim.x + threadIdx.x;
 int row = blockIdx.y * blockDim.y + threadIdx.y;
     </code></pre>
-    <div class="highlight-box" style="font-size:0.7em;">
-      Same arithmetic &mdash; adjacent threads read <strong>adjacent columns</strong><br>
-      1 &times; 128B transaction instead of 32 &times; 32B transactions
-    </div>
-    <p style="font-size:0.65em;"><span class="badge green">12.7&times;</span> speedup from a <em>two-line swap</em></p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Swap <code>threadIdx.x &rarr; col</code>: adjacent threads read <strong>adjacent columns</strong> (stride-1)</li>
+      <li>1 &times; 128 B transaction instead of 32 &times; 32 B transactions</li>
+      <li>Same arithmetic, zero extra work &rarr; <span class="badge green">12.7&times;</span> speedup</li>
+    </ul>
   </section>
 
   <section>
@@ -380,13 +385,18 @@ for (int t = 0; t < K; t += 32) {
     Bs[ty][tx] = B[(t + ty) * N + col];
     __syncthreads();
 
-    for (int k = 0; k < 32; k++)
+    for (int k = 0; k < 32; k++) {
         sum += As[ty][k] * Bs[k][tx];   // smem reads
+    }
     __syncthreads();
 }
 C[row * N + col] = sum;
     </code></pre>
-    <p style="font-size:0.65em;"><span class="badge green">32&times; less traffic</span> OI: 0.25 &rarr; ~8 FLOP/byte</p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>32&times;32 block cooperatively loads tile into <code>__shared__</code> memory</li>
+      <li>Each element reused 32&times; &rarr; <span class="badge green">32&times; less</span> global traffic</li>
+      <li>OI: 0.25 &rarr; ~8 FLOP/byte &mdash; approaching compute-bound</li>
+    </ul>
   </section>
 
   <section>
@@ -402,13 +412,18 @@ for (int t = 0; t < K; t += BK) {
     __syncthreads();
     for (int k = 0; k < BK; k++) {
         float b_val = Bs[k][tx];    // load B once
-        for (int m = 0; m < TM; m++)
+        for (int m = 0; m < TM; m++) {
             accum[m] += As[ty*TM + m][k] * b_val;  // reuse &times;8
+        }
     }
     __syncthreads();
 }
     </code></pre>
-    <p style="font-size:0.65em;">block(64, 8) = 512 threads &mdash; <strong>1 B value &times; 8 A values</strong> per inner step</p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Each thread computes TM=8 rows &rarr; 8 accumulators in registers</li>
+      <li>Load <code>b_val</code> once, reuse across 8 A values &rarr; better smem reuse</li>
+      <li>block(64, 8) = 512 threads, tile 64&times;64</li>
+    </ul>
   </section>
 
   <section>
@@ -420,17 +435,25 @@ float accum[8][8] = {{0.0f}};       // 64 accumulators
 float a_cache[8], b_cache[8];       // register cache
 
 for (int k = 0; k < BK; k++) {
-    for (int m = 0; m < TM; m++)
+    for (int m = 0; m < TM; m++) {
         a_cache[m] = As[thread_row * TM + m][k];
-    for (int n = 0; n < TN; n++)
+    }
+    for (int n = 0; n < TN; n++) {
         b_cache[n] = Bs[k][thread_col * TN + n];
+    }
 
-    for (int m = 0; m < TM; m++)    // outer product
-        for (int n = 0; n < TN; n++)
+    for (int m = 0; m < TM; m++) {  // outer product
+        for (int n = 0; n < TN; n++) {
             accum[m][n] += a_cache[m] * b_cache[n];
+        }
+    }
 }
     </code></pre>
-    <p style="font-size:0.65em;"><span class="badge green">8&times; fewer smem reads</span> 16 loads &rarr; 64 FMAs per k-step</p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>8&times;8 register block per thread &rarr; 64 accumulators</li>
+      <li>Outer product: 8 + 8 = 16 smem loads &rarr; 64 FMAs per k-step</li>
+      <li><span class="badge green">8&times; fewer smem reads</span> vs. 1D tiling</li>
+    </ul>
   </section>
 
   <section>
@@ -451,7 +474,11 @@ float4 out = {accum[m][n], accum[m][n+1],
               accum[m][n+2], accum[m][n+3]};
 reinterpret_cast&lt;float4*&gt;(&C[gr*N + gc])[0] = out;
     </code></pre>
-    <p style="font-size:0.65em;">LDG.128: <strong>4&times; fewer instructions</strong> &mdash; transposed smem eliminates bank conflicts</p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li><code>float4</code> (LDG.128): 1 instruction loads 4 floats &rarr; <strong>4&times; fewer load instructions</strong></li>
+      <li>Transposed smem layout <code>As[k][m]</code> eliminates bank conflicts</li>
+      <li>Vectorized store to C avoids 4 separate writes</li>
+    </ul>
   </section>
 
   <section>
@@ -466,14 +493,20 @@ int thr_row = lane_id / (WN/TN);       // within warp
 int thr_col = lane_id % (WN/TN);
 
 for (int k = 0; k < BK; k++) {
-    for (int m = 0; m < TM; m++)
+    for (int m = 0; m < TM; m++) {
         a_cache[m] = As[k][warp_row*WM + thr_row*TM + m];
-    for (int n = 0; n < TN; n++)
+    }
+    for (int n = 0; n < TN; n++) {
         b_cache[n] = Bs[k][warp_col*WN + thr_col*TN + n];
+    }
     // ... outer product into accum[8][8]
 }
     </code></pre>
-    <p style="font-size:0.65em;">Warp working set: 32&times;8 + 8&times;64 = <strong>768 floats</strong> &mdash; fits L1 &rarr; better locality</p>
+    <ul style="font-size:0.6em; margin-top:0.3em;">
+      <li>Three-level tiling: Block (128&times;128) &rarr; Warp (32&times;64) &rarr; Thread (8&times;8)</li>
+      <li>Warp working set = 768 floats &rarr; fits in L1 cache</li>
+      <li>Threads in same warp access nearby smem &rarr; better spatial locality</li>
+    </ul>
   </section>
 </section>
 
@@ -721,9 +754,6 @@ for (int k = 0; k < BK; k++) {
   <section>
     <h2>Parallel Efficiency</h2>
     <img src="img/strong_scaling_efficiency.png" alt="Parallel efficiency">
-    <p style="font-size:0.7em;">
-      Super-linear at p=2 for N=8192 &mdash; halved working set fits better in L2 cache
-    </p>
   </section>
 </section>
 
