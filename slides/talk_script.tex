@@ -41,12 +41,12 @@ At the software level, we structured the code into clean layers: benchmark appli
 \subsection*{6) Kernel Optimization Roadmap}
 We implement seven kernels, each adding one major optimization: naive mapping, coalesced access, shared-memory tiling, 1D block tiling, 2D register blocking, vectorized loads, and warp-level tiling. The progression is deliberate: first remove avoidable global-memory penalties, then increase data reuse, then increase per-thread arithmetic intensity. A key step is 2D register blocking, which sharply cuts shared-memory reads per FMA. This roadmap gives a causal chain between low-level memory behavior and measured throughput.
 
-\subsection*{7) Roofline Model}
-Now we connect optimization behavior to a model. Roofline says performance is bounded by
-\[
-P_{\max} = \min(\pi,\; \beta \cdot \mathrm{OI}),
-\]
-where for H100 FP32 we use $\pi = 33.5$ TFLOPS and $\beta = 3.35$ TB/s. That gives a ridge point near 10 FLOP/byte. For GEMM, theoretical operational intensity scales as $N/6$, so larger matrices should move toward compute-bound execution. In our measurements, naive and coalesced kernels remain memory-bound, while later kernels move rightward toward the ridge.
+% \subsection*{7) Roofline Model}
+% Now we connect optimization behavior to a model. Roofline says performance is bounded by
+% \[
+% P_{\max} = \min(\pi,\; \beta \cdot \mathrm{OI}),
+% \]
+% where for H100 FP32 we use $\pi = 33.5$ TFLOPS and $\beta = 3.35$ TB/s. That gives a ridge point near 10 FLOP/byte. For GEMM, theoretical operational intensity scales as $N/6$, so larger matrices should move toward compute-bound execution. In our measurements, naive and coalesced kernels remain memory-bound, while later kernels move rightward toward the ridge.
 
 \subsection*{8) Tensor Parallelism}
 
@@ -76,20 +76,24 @@ The practical point is not just formula correctness, but exactly where collectiv
 \subsection*{9) Parallel MLP Block}
 We compose a standard MLP as column-parallel first layer plus row-parallel second layer. The key systems insight is that the column-parallel output shard is already the right input shard for the row-parallel layer, so no intermediate AllGather is needed between the two GEMMs. This reduces communication to exactly two AllReduces per block: one in forward and one in backward. That communication pattern is one reason this decomposition is practical at scale.
 
+\subsection*{10) Communication Cost Analysis}
+This slide quantifies the tradeoff. Compute per GPU scales as $O(mnk/p)$, which is cubic in the matrix dimension, while communication is only $O(mn)$, quadratic. So the comm-to-compute ratio scales as $p/k$: it shrinks with larger hidden dimension and grows with more GPUs. The bottom line is that tensor parallelism is most effective when $k$ is much larger than $p$, which is exactly the regime of today's large language models.
+
+
 \subsection*{10) Single-GPU: GFLOPS}
 This plot shows the optimization trajectory clearly. Naive and coalesced variants plateau near 6,300 GFLOPS, indicating memory-bandwidth limitation. Shared-memory tiling lifts throughput to around 9,000 GFLOPS by reducing global-memory traffic. Register-blocked and vectorized kernels jump much higher, reaching above 30,000 GFLOPS at practical matrix sizes.
 
-\subsection*{11) Single-GPU: Key Observations}
-There are several concrete takeaways from this slide. Coalescing alone gives a large jump over deliberately uncoalesced access, around 12.7x at $N=4096$ (498 to 6,326 GFLOPS). 2D block tiling reaches 22,044 GFLOPS at $N=4096$, around 3.5x over shared-memory-only tiling. Vectorized loads push this to 32,612 GFLOPS at $N=4096$, and around 32,000 GFLOPS through larger sizes. cuBLAS reaches 53,304 GFLOPS at $N=16384$, and our best custom kernel reaches about 63\% of cuBLAS.
+% \subsection*{11) Single-GPU: Key Observations}
+% The table on the slide summarizes the key numbers, so let me highlight the big picture. Each optimization step gives a clear jump: coalescing alone gives over 12x improvement, register blocking adds another 3.5x on top of shared-memory tiling, and vectorized loads push us further. Our best custom kernel reaches about 63\% of cuBLAS. That remaining gap is mainly due to library-level tricks like warp-level scheduling and double buffering that we did not implement.
 
-\subsection*{12) Strong Scaling}
-Under fixed total problem size, large matrices scale well across GPUs. For $N=32768$, runtime drops from 1331 ms on 1 GPU to 176 ms on 8 GPUs, which is a 7.6x speedup and about 94.5\% efficiency. At that point aggregate throughput reaches about 400 TFLOPS. Smaller matrices scale less well because fixed communication overhead is a larger fraction of total time.
+\subsection*{12) Scaling}
+This is the scaling result where we fix the total problem size and add more GPUs. Large matrices scale very welly, while smaller matrices scale less well because the n square communication cost becomes a bigger fraction of the total time.
 
 \subsection*{13) Parallel Efficiency}
-This efficiency view explains why scaling quality depends on matrix size. At $N=32768$, efficiency remains above 94\% even at 8 GPUs because compute time dominates communication. In the report, this is roughly 166 ms compute versus 11 ms communication at 8 GPUs. We also observe slight super-linear behavior at small GPU counts for some sizes, likely because reduced per-GPU working sets improve cache locality.
+This slide makes the same point from the efficiency perspective. For our largest matrix size, efficiency stays above 94\% even at 8 GPUs, because the compute time vastly dominates communication.
 
-\subsection*{14) Weak Scaling}
-In weak scaling, each GPU keeps the same local workload, here a fixed $2048\times2048$ problem per GPU. Total time rises from 0.44 ms to 1.12 ms from 1 to 8 GPUs, a 2.6x overhead while total work increases 8x. Aggregate throughput increases from 39.5 to 123.2 TFLOPS, about 3.1x. So throughput still grows, but collectives prevent ideal linear weak scaling.
+% \subsection*{14) Weak Scaling}
+% In weak scaling, each GPU keeps the same local workload, so ideal scaling would be a flat line. In practice, total time does grow due to collective communication, but aggregate throughput still increases roughly 3x from 1 to 8 GPUs. So we do get real benefit from adding GPUs, just not perfect linear scaling, which is expected.
 
 \subsection*{15) Comm-Compute Ratio vs. Size}
 Here we found that compute scales as n cube---because GEMM is essentially three nested loops---while communication only scales as n squre, which is copying the matrix. You can see this clearly in the curve: when n is small the ratio is almost 1, meaning communication and compute take roughly the same time. But as n increases, the ratio drops, so compute completely dominates. This is also why tensor parallelism is so popular in today's LLMs---at the large hidden dimensions used in practice, the communication overhead becomes relatively small compared to the compute.
@@ -107,7 +111,7 @@ In the parallel MLP experiment, backward is consistently slower than forward, an
 In summary, we show three things. First, single-GPU optimization moves GEMM from a memory-bound regime around 6,300 GFLOPS to a compute-leaning regime around 32,800 GFLOPS, with our best kernel reaching 63\% of cuBLAS. Second, tensor parallelism on 8 H100 GPUs achieves strong scaling up to 7.6x and 400 TFLOPS on large matrices. Third, and most importantly, faster local kernels raise the relative communication burden, with ratio increasing from 0.20 to 0.85. So distributed performance requires co-optimization of kernels and communication, not only one side.
 
 \subsection*{20) Thank You / Q\&A}
-Thank you for listening. We are happy to discuss details on kernel design choices, NCCL collective patterns, and why communication-compute crossover matters for real-world LLM workloads. If useful, we can also walk through how this codebase is structured to support adding new kernels and benchmarking them quickly.
+Thank you for listening.
 
 \section*{Optional Short Transitions}
 \begin{itemize}[leftmargin=1.5em]

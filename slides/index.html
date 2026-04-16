@@ -299,6 +299,11 @@
 <!-- ============================================================ -->
 <!-- KERNEL OPTIMIZATION ROADMAP -->
 <!-- ============================================================ -->
+
+<!-- ============================================================ -->
+<!-- KERNEL CODE DEEP-DIVE (sub-slides) -->
+<!-- ============================================================ -->
+<section>
 <section>
   <h2>Kernel Optimization Roadmap</h2>
   <table style="font-size:0.6em;">
@@ -323,11 +328,6 @@
     <div class="flow-box" style="border-color:var(--dracula-purple);">cuBLAS<br><small>~53.3k GFLOPS</small></div>
   </div>
 </section>
-
-<!-- ============================================================ -->
-<!-- KERNEL CODE DEEP-DIVE (sub-slides) -->
-<!-- ============================================================ -->
-<section>
   <section>
     <h2>Kernel 1: Naive</h2>
     <p style="font-size:0.7em; color:var(--dracula-comment);">1 thread &rarr; 1 element &mdash; no data reuse</p>
@@ -513,7 +513,7 @@ for (int k = 0; k < BK; k++) {
 <!-- ============================================================ -->
 <!-- BACKGROUND: ROOFLINE -->
 <!-- ============================================================ -->
-<section>
+<!-- <section>
   <h2>Roofline Model</h2>
   <div class="img-text-row">
     <img src="img/roofline.png" alt="Roofline analysis" style="max-height:45vh;">
@@ -531,7 +531,7 @@ for (int k = 0; k < BK; k++) {
       </p>
     </div>
   </div>
-</section>
+</section> -->
 
 <!-- ============================================================ -->
 <!-- TENSOR PARALLELISM -->
@@ -643,7 +643,7 @@ for (int k = 0; k < BK; k++) {
           <tr><td><span class="badge orange">AllReduce</span></td><td>\(2 \cdot \frac{p-1}{p} \cdot m n\) elements</td><td>\(2(p - 1)\)</td></tr>
         </tbody>
       </table>
-      <p style="margin-top:0.6em;">Compute per GPU: \(\displaystyle \frac{2mnk}{p}\) FLOPs. Communication: \(O(mn)\) elements.</p>
+      <p style="margin-top:0.6em;">Compute per GPU: \(O\left(\frac{mnk}{p}\right)\) FLOPs. Communication: \(O(mn)\) elements.</p>
       <p>The <strong>comm-compute ratio</strong>:</p>
       <p style="text-align:center; font-size:1.1em;">
         \(\displaystyle \frac{T_{\text{comm}}}{T_{\text{comp}}} \propto \frac{p}{k}\)
@@ -693,7 +693,7 @@ for (int k = 0; k < BK; k++) {
     <h2>Single-GPU: GFLOPS</h2>
     <img src="img/kernel_gflops.png" alt="Kernel GFLOPS comparison">
   </section>
-  <section>
+  <!-- <section>
     <h2>Single-GPU: Key Observations</h2>
     <div class="img-text-row">
       <img src="img/cublas_percentage.png" alt="cuBLAS percentage" style="max-height:45vh;">
@@ -707,7 +707,7 @@ for (int k = 0; k < BK; k++) {
         </ul>
       </div>
     </div>
-  </section>
+  </section> -->
 </section>
 
 <!-- ============================================================ -->
@@ -715,7 +715,7 @@ for (int k = 0; k < BK; k++) {
 <!-- ============================================================ -->
 <section>
   <section>
-    <h2>Strong Scaling</h2>
+    <h2>Scaling</h2>
     <div class="img-text-row">
       <img src="img/strong_scaling.png" alt="Strong scaling" style="max-height:50vh;">
     </div>
@@ -729,11 +729,11 @@ for (int k = 0; k < BK; k++) {
 <!-- ============================================================ -->
 <!-- WEAK SCALING -->
 <!-- ============================================================ -->
-<section>
+<!-- <section>
   <h2>Weak Scaling</h2>
     <img src="img/weak_scaling.png" alt="Weak scaling" style="max-height:50vh;">
     <p>Fixed <strong>2048&times;2048</strong> per GPU</p>
-</section>
+</section> -->
 
 <!-- ============================================================ -->
 <!-- COMM-COMPUTE RATIO (KEY RESULT) -->
