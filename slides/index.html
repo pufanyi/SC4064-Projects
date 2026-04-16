@@ -559,23 +559,18 @@ for (int k = 0; k < BK; k++) {
   <!-- TP Math: Column Parallel -->
   <section>
     <h2>Column Parallel &mdash; Math</h2>
-    <div style="font-size:0.78em; text-align:left;">
-      <p>Given a linear layer \(Y = XW\) with \(X \in \mathbb{R}^{m \times k}\), \(W \in \mathbb{R}^{k \times n}\).</p>
-      <p>Split \(W\) <strong>column-wise</strong> across \(p\) GPUs:</p>
-      <p style="text-align:center;">
-        \(W = \bigl[\, W_1 \;\big|\; W_2 \;\big|\; \cdots \;\big|\; W_p \,\bigr], \quad W_i \in \mathbb{R}^{k \times n/p}\)
+    <div style="font-size:0.7em; text-align:left;">
+      <p style="margin:0.3em 0;">Given \(Y = XW\) with \(X \in \mathbb{R}^{m \times k}\), \(W \in \mathbb{R}^{k \times n}\).
+        Split \(W\) <strong>column-wise</strong> across \(p\) GPUs:</p>
+      <p style="text-align:center; margin:0.2em 0;">
+        \(W = \bigl[\, W_1 \;\big|\; \cdots \;\big|\; W_p \,\bigr], \; W_i \in \mathbb{R}^{k \times n/p}\)
       </p>
-      <p>Each GPU \(i\) holds a full copy of \(X\) and computes:</p>
-      <p style="text-align:center;">
-        \(Y_i = X \, W_i \in \mathbb{R}^{m \times n/p}\)
-      </p>
-      <p>The full output is the <strong>concatenation</strong>:</p>
-      <p style="text-align:center;">
-        \(Y = \bigl[\, Y_1 \;\big|\; Y_2 \;\big|\; \cdots \;\big|\; Y_p \,\bigr] \in \mathbb{R}^{m \times n}\)
-      </p>
-      <div class="highlight-box" style="border-color:var(--dracula-cyan); font-size:1.15em; padding:0.6em 0.8em;">
-        <p style="margin:0 0 0.45em 0;"><strong>Forward:</strong> <span class="badge cyan">AllGather</span> to collect \(Y_i\) &rarr; \(Y\).</p>
-        <p style="margin:0;"><strong>Backward:</strong> \(\displaystyle\frac{\partial L}{\partial X} = \frac{\partial L}{\partial Y} W^\top = \sum_{i=1}^{p} \frac{\partial L}{\partial Y_i} W_i^\top\) &rarr; <span class="badge orange">AllReduce</span>.</p>
+      <p style="margin:0.3em 0;">Each GPU holds full \(X\) and computes \(Y_i = X W_i \in \mathbb{R}^{m \times n/p}\).
+        &ensp; Full output: \(Y = \bigl[\, Y_1 \;\big|\; \cdots \;\big|\; Y_p \,\bigr]\).</p>
+      <div class="highlight-box" style="border-color:var(--dracula-cyan); font-size:0.95em; padding:0.4em 0.7em; margin-top:0.4em;">
+        <p style="margin:0 0 0.3em 0;"><strong>Forward:</strong> <span class="badge cyan">AllGather</span> to collect \(Y_i\) &rarr; \(Y\).</p>
+        <p style="margin:0 0 0.3em 0;"><strong>Bwd (dW):</strong> \(\frac{\partial L}{\partial W_i} = X^\top \frac{\partial L}{\partial Y_i}\) &mdash; <span class="badge green">no comm</span></p>
+        <p style="margin:0;"><strong>Bwd (dX):</strong> \(\frac{\partial L}{\partial X} = \sum_{i=1}^{p} \frac{\partial L}{\partial Y_i} W_i^\top\) &rarr; <span class="badge orange">AllReduce</span></p>
       </div>
     </div>
   </section>
@@ -589,23 +584,17 @@ for (int k = 0; k < BK; k++) {
   <!-- TP Math: Row Parallel -->
   <section>
     <h2>Row Parallel &mdash; Math</h2>
-    <div style="font-size:0.78em; text-align:left;">
-      <p>Split \(W\) <strong>row-wise</strong> and \(X\) <strong>column-wise</strong> accordingly:</p>
-      <p style="text-align:center;">
-        \(W = \begin{bmatrix} W_1 \\ W_2 \\ \vdots \\ W_p \end{bmatrix}, \; W_i \in \mathbb{R}^{k/p \times n}, \qquad
+    <div style="font-size:0.7em; text-align:left;">
+      <p style="margin:0.3em 0;">Split \(W\) <strong>row-wise</strong>, \(X\) <strong>column-wise</strong>: &ensp;
+        \(W = \begin{bmatrix} W_1 \\ \vdots \\ W_p \end{bmatrix}\!, \; W_i \in \mathbb{R}^{k/p \times n}, \quad
         X = \bigl[\, X_1 \;\big|\; \cdots \;\big|\; X_p \,\bigr], \; X_i \in \mathbb{R}^{m \times k/p}\)
       </p>
-      <p>Each GPU \(i\) computes a <strong>partial result</strong>:</p>
-      <p style="text-align:center;">
-        \(\tilde{Y}_i = X_i \, W_i \in \mathbb{R}^{m \times n}\)
-      </p>
-      <p>The full output is the <strong>summation</strong>:</p>
-      <p style="text-align:center;">
-        \(Y = \sum_{i=1}^{p} \tilde{Y}_i = X_1 W_1 + X_2 W_2 + \cdots + X_p W_p\)
-      </p>
-      <div class="highlight-box" style="border-color:var(--dracula-pink); font-size:1.15em; padding:0.6em 0.8em;">
-        <p style="margin:0 0 0.45em 0;"><strong>Forward:</strong> <span class="badge orange">AllReduce</span> to sum \(\tilde{Y}_i\) &rarr; \(Y\).</p>
-        <p style="margin:0;"><strong>Backward:</strong> \(\displaystyle\frac{\partial L}{\partial X_i} = \frac{\partial L}{\partial Y} W_i^\top\) &mdash; <span class="badge green">no communication</span> (each GPU already has \(\frac{\partial L}{\partial Y}\)).</p>
+      <p style="margin:0.3em 0;">Each GPU computes a <strong>partial result</strong>: \(\;\tilde{Y}_i = X_i W_i \in \mathbb{R}^{m \times n}\).
+        &ensp; Full output: \(Y = \sum_{i=1}^{p} \tilde{Y}_i\).</p>
+      <div class="highlight-box" style="border-color:var(--dracula-pink); font-size:0.95em; padding:0.4em 0.7em; margin-top:0.4em;">
+        <p style="margin:0 0 0.3em 0;"><strong>Forward:</strong> <span class="badge orange">AllReduce</span> to sum \(\tilde{Y}_i\) &rarr; \(Y\).</p>
+        <p style="margin:0 0 0.3em 0;"><strong>Bwd (dW):</strong> \(\frac{\partial L}{\partial W_i} = X_i^\top \frac{\partial L}{\partial Y}\) &mdash; <span class="badge green">no comm</span></p>
+        <p style="margin:0;"><strong>Bwd (dX):</strong> \(\frac{\partial L}{\partial X_i} = \frac{\partial L}{\partial Y} W_i^\top\) &mdash; <span class="badge green">no comm</span></p>
       </div>
     </div>
   </section>
@@ -729,26 +718,6 @@ for (int k = 0; k < BK; k++) {
     <h2>Strong Scaling</h2>
     <div class="img-text-row">
       <img src="img/strong_scaling.png" alt="Strong scaling" style="max-height:50vh;">
-      <div>
-        <div class="stat-grid">
-          <div class="stat-card">
-            <div class="value">7.6&times;</div>
-            <div class="label">Speedup<br>N=32768, 8 GPUs</div>
-          </div>
-          <div class="stat-card">
-            <div class="value">94.5%</div>
-            <div class="label">Parallel efficiency<br>N=32768, 8 GPUs</div>
-          </div>
-          <div class="stat-card">
-            <div class="value" style="color:var(--dracula-pink);">400</div>
-            <div class="label">Aggregate TFLOPS<br>8&times;H100</div>
-          </div>
-          <div class="stat-card">
-            <div class="value">4.1&times;</div>
-            <div class="label">Speedup<br>N=8192, 8 GPUs</div>
-          </div>
-        </div>
-      </div>
     </div>
   </section>
   <section>
@@ -762,23 +731,8 @@ for (int k = 0; k < BK; k++) {
 <!-- ============================================================ -->
 <section>
   <h2>Weak Scaling</h2>
-  <div class="img-text-row">
     <img src="img/weak_scaling.png" alt="Weak scaling" style="max-height:50vh;">
-    <div>
-      <p>Fixed <strong>2048&times;2048</strong> per GPU</p>
-      <div class="stat-card" style="margin:0.5em 0;">
-        <div class="value">3.1&times;</div>
-        <div class="label">Throughput scaling<br>39.5 &rarr; 123.2 TFLOPS</div>
-      </div>
-      <div class="stat-card">
-        <div class="value" style="color:var(--dracula-orange);">2.6&times;</div>
-        <div class="label">Time overhead<br>0.44 &rarr; 1.12 ms</div>
-      </div>
-      <p style="font-size:0.7em; color:var(--dracula-comment); margin-top:0.5em;">
-        Sub-linear due to AllGather communication overhead growing with participants
-      </p>
-    </div>
-  </div>
+    <p>Fixed <strong>2048&times;2048</strong> per GPU</p>
 </section>
 
 <!-- ============================================================ -->
@@ -787,25 +741,9 @@ for (int k = 0; k < BK; k++) {
 <section>
   <section>
     <h2>Comm-Compute Ratio vs. Size</h2>
-    <div class="img-text-row">
-      <img src="img/comm_compute_ratio_size.png" alt="Ratio vs size" style="max-height:48vh;">
-      <div>
-        <p>Cubic compute vs. quadratic comm:</p>
-        <div class="stat-card" style="margin:0.4em 0;">
-          <div class="value" style="color:var(--dracula-red);">0.99</div>
-          <div class="label">Ratio at N=2048<br>comm &asymp; compute</div>
-        </div>
-        <div class="stat-card">
-          <div class="value">0.07</div>
-          <div class="label">Ratio at N=32768<br>compute dominates</div>
-        </div>
-        <p style="font-size:0.7em; color:var(--dracula-comment); margin-top:0.5em;">
-          TP is most effective at large N (e.g., GPT-3 hidden dim 12288&ndash;16384)
-        </p>
-      </div>
-    </div>
+    <img src="img/comm_compute_ratio_size.png" alt="Ratio vs size" style="max-height:48vh;">
   </section>
-  <section>
+  <!-- <section>
     <h2>Comm-Compute Ratio vs. Kernel</h2>
     <img src="img/comm_compute_ratio_kernel.png" alt="Ratio vs kernel" style="max-height:42vh;">
     <div class="highlight-box" style="font-size:0.75em;">
@@ -817,7 +755,7 @@ for (int k = 0; k < BK; k++) {
       <div class="flow-arrow">&rarr;&rarr;&rarr;</div>
       <div class="flow-box" style="border-color:var(--dracula-red);">cuBLAS<br><small>comm = 85% of compute</small></div>
     </div>
-  </section>
+  </section> -->
 </section>
 
 <!-- ============================================================ -->
@@ -842,7 +780,7 @@ for (int k = 0; k < BK; k++) {
       </div>
     </div>
   </section>
-  <section>
+  <!-- <section>
     <h2>Communication-Compute Overlap</h2>
     <div class="img-text-row">
       <img src="img/overlap_comparison.png" alt="Overlap comparison" style="max-height:48vh;">
@@ -858,13 +796,13 @@ for (int k = 0; k < BK; k++) {
         </div>
       </div>
     </div>
-  </section>
+  </section> -->
 </section>
 
 <!-- ============================================================ -->
 <!-- CONCLUSION -->
 <!-- ============================================================ -->
-<section>
+<!-- <section>
   <h2>Takeaways</h2>
   <div style="text-align:left; font-size:0.75em;">
     <div style="display:flex; gap:1em; margin-bottom:0.6em;">
@@ -890,14 +828,14 @@ for (int k = 0; k < BK; k++) {
       Distributed DL requires <strong>co-optimization</strong> of compute &amp; communication.
     </div>
   </div>
-</section>
+</section> -->
 
 <!-- ============================================================ -->
 <!-- END -->
 <!-- ============================================================ -->
 <section>
   <h2 style="margin-bottom:0.8em;">Thank You</h2>
-  <div class="stat-grid" style="max-width:550px; margin:0 auto;">
+  <!-- <div class="stat-grid" style="max-width:550px; margin:0 auto;">
     <div class="stat-card">
       <div class="value" style="color:var(--dracula-purple);">7</div>
       <div class="label">CUDA Kernels</div>
@@ -914,7 +852,7 @@ for (int k = 0; k < BK; k++) {
       <div class="value" style="color:var(--dracula-green);">400</div>
       <div class="label">TFLOPS</div>
     </div>
-  </div>
+  </div> -->
   <br>
   <p style="font-size:0.5em; color:var(--dracula-comment);">
     Aryan Jain &bull; Fanyi Pu &bull; Ze Hong Maxwell Au &ensp;|&ensp; NTU SC4064

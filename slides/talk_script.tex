@@ -49,7 +49,29 @@ P_{\max} = \min(\pi,\; \beta \cdot \mathrm{OI}),
 where for H100 FP32 we use $\pi = 33.5$ TFLOPS and $\beta = 3.35$ TB/s. That gives a ridge point near 10 FLOP/byte. For GEMM, theoretical operational intensity scales as $N/6$, so larger matrices should move toward compute-bound execution. In our measurements, naive and coalesced kernels remain memory-bound, while later kernels move rightward toward the ridge.
 
 \subsection*{8) Tensor Parallelism}
-To scale beyond one GPU, we use Megatron-style tensor parallelism with column and row partitioning of weight matrices. In column parallelism, output shards are gathered in forward, and input gradients are reduced in backward. In row parallelism, partial outputs are reduced in forward, while backward is local for the input shard. The practical point is not just formula correctness, but exactly where collectives occur and how much data they move.
+
+To scale beyond one GPU, we use Megatron-style tensor parallelism with column and row partitioning of weight matrices.
+
+\subsubsection*{Column Parallel --- Math}
+
+In column parallelism, output shards are gathered in forward, and input gradients are reduced in backward.
+
+\subsubsection*{Column Parallel --- Visual}
+
+[can skip, just in case of teacher's questions]
+
+\subsubsection*{Row Parallel --- Math}
+
+In row parallelism, partial outputs are reduced in forward, while backward is local for the input shard.
+
+\subsubsection*{Row Parallel --- Visual}
+
+[can skip, just in case of teacher's questions]
+
+\subsubsection*{Why Column $\to$ Row Fuses Perfectly}
+
+The practical point is not just formula correctness, but exactly where collectives occur and how much data they move. For example, in MLP, we can first do a column-parallel and then a row-parallel. So there is no intermediate AllGather between the two GEMMs.
+
 
 \subsection*{9) Parallel MLP Block}
 We compose a standard MLP as column-parallel first layer plus row-parallel second layer. The key systems insight is that the column-parallel output shard is already the right input shard for the row-parallel layer, so no intermediate AllGather is needed between the two GEMMs. This reduces communication to exactly two AllReduces per block: one in forward and one in backward. That communication pattern is one reason this decomposition is practical at scale.
@@ -70,16 +92,16 @@ This efficiency view explains why scaling quality depends on matrix size. At $N=
 In weak scaling, each GPU keeps the same local workload, here a fixed $2048\times2048$ problem per GPU. Total time rises from 0.44 ms to 1.12 ms from 1 to 8 GPUs, a 2.6x overhead while total work increases 8x. Aggregate throughput increases from 39.5 to 123.2 TFLOPS, about 3.1x. So throughput still grows, but collectives prevent ideal linear weak scaling.
 
 \subsection*{15) Comm-Compute Ratio vs. Size}
-This slide is a key message: compute scales as $\mathcal{O}(N^3)$ while communication scales closer to $\mathcal{O}(N^2)$. At $N=2048$, communication and compute are almost equal: 0.47 ms versus 0.48 ms, ratio 0.99. At $N=32768$, compute is about 166 ms while communication is about 11 ms, ratio 0.07. This is why tensor parallelism becomes more favorable at large hidden dimensions seen in modern LLMs.
+Here we found that compute scales as n cube---because GEMM is essentially three nested loops---while communication only scales as n squre, which is copying the matrix. You can see this clearly in the curve: when n is small the ratio is almost 1, meaning communication and compute take roughly the same time. But as n increases, the ratio drops, so compute completely dominates. This is also why tensor parallelism is so popular in today's LLMs---at the large hidden dimensions used in practice, the communication overhead becomes relatively small compared to the compute.
 
-\subsection*{16) Comm-Compute Ratio vs. Kernel}
-This is the central crossover experiment in the project. At fixed distributed setup, communication time is nearly constant across kernels, about 0.64 ms, because it depends on payload and interconnect rather than local GEMM implementation. But GEMM time drops from about 3.15 ms with naive kernels to about 0.75 ms with cuBLAS. So the communication-to-compute ratio rises from 0.20 to 0.85. That means better kernels can make communication the limiting factor unless communication is optimized too.
+% \subsection*{16) Comm-Compute Ratio vs. Kernel}
+% This is the central crossover experiment in the project. At fixed distributed setup, communication time is nearly constant across kernels, about 0.64 ms, because it depends on payload and interconnect rather than local GEMM implementation. But GEMM time drops from about 3.15 ms with naive kernels to about 0.75 ms with cuBLAS. So the communication-to-compute ratio rises from 0.20 to 0.85. That means better kernels can make communication the limiting factor unless communication is optimized too.
 
 \subsection*{17) MLP Forward \& Backward}
-In the parallel MLP experiment, backward is consistently slower than forward, and the gap grows with size. The backward-to-forward ratio rises from 1.1x at $N=2048$ to 1.7x at $N=8192$. This aligns with operation count: backward includes additional GEMMs for gradients compared with forward. For training systems, this emphasizes that optimizing backward kernels and communication is as important as forward throughput.
+In the parallel MLP experiment, backward is consistently slower than forward, and the gap grows with size. This aligns with operation count: backward includes additional GEMMs for gradients compared with forward. For training systems, this emphasizes that optimizing backward kernels and communication is as important as forward throughput.
 
-\subsection*{18) Communication-Compute Overlap}
-We also tested overlap by chunking output along the M dimension and pipelining each chunk's AllReduce with the next chunk's GEMM on separate streams using events. With 4 chunks, overlap hurts at smaller sizes: about 0.93x at $N=2048$ and 0.96x at $N=4096$. At $N=8192$, it gives only a marginal 1.02x gain. On this H100 NVLink platform, communication latency is already low, so overlap opportunity is limited and overhead can dominate.
+% \subsection*{18) Communication-Compute Overlap}
+% We also tested overlap by chunking output along the M dimension and pipelining each chunk's AllReduce with the next chunk's GEMM on separate streams using events. With 4 chunks, overlap hurts at smaller sizes: about 0.93x at $N=2048$ and 0.96x at $N=4096$. At $N=8192$, it gives only a marginal 1.02x gain. On this H100 NVLink platform, communication latency is already low, so overlap opportunity is limited and overhead can dominate.
 
 \subsection*{19) Takeaways}
 In summary, we show three things. First, single-GPU optimization moves GEMM from a memory-bound regime around 6,300 GFLOPS to a compute-leaning regime around 32,800 GFLOPS, with our best kernel reaching 63\% of cuBLAS. Second, tensor parallelism on 8 H100 GPUs achieves strong scaling up to 7.6x and 400 TFLOPS on large matrices. Third, and most importantly, faster local kernels raise the relative communication burden, with ratio increasing from 0.20 to 0.85. So distributed performance requires co-optimization of kernels and communication, not only one side.
