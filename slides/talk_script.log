@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.22)  16 APR 2026 09:06
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026) (preloaded format=pdflatex 2026.3.22)  16 APR 2026 09:37
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -181,25 +181,25 @@ File: ts1lmr.fd 2015/05/01 v1.6.1 Font defs for Latin Modern
 {/mnt/aigc/users/pufanyi/.TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.map}{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc}{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-ts1.enc}]
 LaTeX Font Info:    External font `lmex10' loaded for size
 (Font)              <10.95> on input line 71.
- [2{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}] [3] [4] (./talk_script.aux)
+ [2{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc}] [3{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc}{/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc}] [4] (./talk_script.aux)
  ***********
 LaTeX2e <2025-11-01>
 L3 programming layer <2026-01-19>
  ***********
  ) 
 Here is how much of TeX's memory you used:
- 1818 strings out of 469515
- 30687 string characters out of 5469773
- 441756 words of memory out of 5000000
+ 1820 strings out of 469515
+ 30709 string characters out of 5469773
+ 442756 words of memory out of 5000000
  30482 multiletter control sequences out of 15000+600000
  664779 words of font info for 63 fonts, out of 8000000 for 9000
  14 hyphenation exceptions out of 8191
- 57i,6n,65p,608b,246s stack positions out of 10000i,1000n,20000p,200000b,200000s
-</mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy10.pfb>
-Output written on talk_script.pdf (4 pages, 158565 bytes).
+ 57i,6n,65p,608b,234s stack positions out of 10000i,1000n,20000p,200000b,200000s
+</mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb></mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmsy10.pfb>
+Output written on talk_script.pdf (4 pages, 165681 bytes).
 PDF statistics:
- 53 PDF objects out of 1000 (max. 8388607)
- 33 compressed objects within 1 object stream
+ 63 PDF objects out of 1000 (max. 8388607)
+ 40 compressed objects within 1 object stream
  0 named destinations out of 1000 (max. 500000)
  1 words of extra memory for PDF output out of 10000 (max. 10000000)
 

@@ -77,9 +77,12 @@ INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/public/lm/rm-lmr10.t
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/public/lm/lmmi10.tfm
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/public/lm/lmsy10.tfm
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc
+INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc
+INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc
 INPUT talk_script.aux
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb
+INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb
 INPUT /mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb

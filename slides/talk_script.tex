@@ -76,6 +76,10 @@ The practical point is not just formula correctness, but exactly where collectiv
 \subsection*{9) Parallel MLP Block}
 We compose a standard MLP as column-parallel first layer plus row-parallel second layer. The key systems insight is that the column-parallel output shard is already the right input shard for the row-parallel layer, so no intermediate AllGather is needed between the two GEMMs. This reduces communication to exactly two AllReduces per block: one in forward and one in backward. That communication pattern is one reason this decomposition is practical at scale.
 
+\subsection*{10) Communication Cost Analysis}
+This slide quantifies the tradeoff. Compute per GPU scales as $O(mnk/p)$, which is cubic in the matrix dimension, while communication is only $O(mn)$, quadratic. So the comm-to-compute ratio scales as $p/k$: it shrinks with larger hidden dimension and grows with more GPUs. The bottom line is that tensor parallelism is most effective when $k$ is much larger than $p$, which is exactly the regime of today's large language models.
+
+
 \subsection*{10) Single-GPU: GFLOPS}
 This plot shows the optimization trajectory clearly. Naive and coalesced variants plateau near 6,300 GFLOPS, indicating memory-bandwidth limitation. Shared-memory tiling lifts throughput to around 9,000 GFLOPS by reducing global-memory traffic. Register-blocked and vectorized kernels jump much higher, reaching above 30,000 GFLOPS at practical matrix sizes.
 

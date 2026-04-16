@@ -1,7 +1,9 @@
 # Fdb version 4
-["pdflatex"] 1776301595.82692 "talk_script.tex" "talk_script.pdf" "talk_script" 1776301596.41021 0
+["pdflatex"] 1776303448.09738 "talk_script.tex" "talk_script.pdf" "talk_script" 1776303448.6894 0
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-ec.enc" 1254269338 2375 baa924870cfb487815765f9094cf3728 ""
+  "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathit.enc" 1202520719 2405 5dcf2c1b967ee25cc46c58cd52244aed ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-mathsy.enc" 1202520719 2840 216e6e45ad352e2456e1149f28885bee ""
+  "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-rm.enc" 1202520719 2327 9d6df24f9c4f7368395224341a95523a ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/enc/dvips/lm/lm-ts1.enc" 1254269338 3031 6c4d3515bf7115d8518af1c9ab97ca44 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/jknappen/ec/ecrm1095.tfm" 1136768653 3584 929cdff2b7a8c11bd4d49fd68cb0ae70 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/public/cm/cmr10.tfm" 1136768653 1296 45809c5a464d5f32c8f98ba97c1bb47f ""
@@ -25,6 +27,7 @@
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/tfm/public/lm/ts1-lmr10.tfm" 1254269338 1556 b86d923e6b2f9aab2e313098a95cb0b8 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx10.pfb" 1255129361 121021 1bf809ce4a594679006bd72263eba59b ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmbx12.pfb" 1255129361 116908 1fca96723793882c2e0160350c192fc8 ""
+  "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmmi10.pfb" 1254269338 30388 702fae6a5f0e6e9c48a1d872b442ffcf ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr10.pfb" 1255129361 119235 f35b44530a1d90eb90fe15d9cba67ea0 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr12.pfb" 1255129361 113634 f99c44d58bae0863375faf0e1d74d612 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-dist/fonts/type1/public/lm/lmr17.pfb" 1255129361 119752 1bd8d06e4079df624bf59ce3ad7c9aa6 ""
@@ -50,8 +53,8 @@
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-var/fonts/map/pdftex/updmap/pdftex.map" 1774247756 197924 5e5e7d64c00301093858e8f5a15795e8 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf-var/web2c/pdftex/pdflatex.fmt" 1774151877 2236159 a33f6d635d4eae8da2d9d8a92875ffb4 ""
   "/mnt/aigc/users/pufanyi/.TinyTeX/texmf.cnf" 1774151833 637 edd806fb06a89761a6034e1968af9017 ""
-  "talk_script.aux" 1776301596.31516 32 c81c40425fbb5e93b90fba65da0b5e61 "pdflatex"
-  "talk_script.tex" 1776301515.81704 10854 8852ec3e6ce9e306145ed2d09eeb715f ""
+  "talk_script.aux" 1776303448.60538 32 c81c40425fbb5e93b90fba65da0b5e61 "pdflatex"
+  "talk_script.tex" 1776302182.38948 11333 d6b9b08cb23e9d4076df23d453c3b44e ""
   (generated)
   "talk_script.aux"
   "talk_script.log"
