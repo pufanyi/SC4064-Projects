@@ -53,7 +53,7 @@ banner() { echo ""; hrule; echo " $*"; hrule; }
 SINGLE_GPU_OUT="$RESULTS_DIR/single_gpu.txt"
 SINGLE_NODE_OUT="$RESULTS_DIR/multi_gpu.txt"
 
-NCCL_DEBUG=INFO
+# NCCL_DEBUG=INFO
 
 # -- 1. Build (both roles) ---------------------------------------------------
 if [ "$SKIP_BUILD" != "1" ]; then

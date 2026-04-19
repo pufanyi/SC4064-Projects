@@ -259,7 +259,13 @@ int main(int argc, char** argv) {
 
     CommRegistry comms(max_gpus);
     const auto scaling_counts = build_scaling_counts(max_gpus);
-    const std::vector<int> sizes = {2048, 4096, 8192, 16384, 32768};
+    // col_sizes includes 49152 (37 GB/GPU at 1 GPU); 65536 would OOM on 1 GPU.
+    // mlp_sizes / ovlp_sizes stay at 32768 because of the 6/4 full M*N
+    // buffers per GPU (memory bound, not compute bound).
+    const std::vector<int> col_sizes  = {2048, 4096, 8192, 16384, 32768, 49152};
+    const std::vector<int> mlp_sizes  = {2048, 4096, 8192, 16384, 32768};
+    const std::vector<int> ovlp_sizes = {2048, 4096, 8192, 16384, 32768};
+    const std::vector<int> weak_sizes = {2048, 4096, 8192};
     constexpr int kWarmup = 5;
     constexpr int kRepeat = 20;
 
@@ -273,7 +279,7 @@ int main(int argc, char** argv) {
            "-----------------------\n");
 
     for (int active_gpus : scaling_counts) {
-        for (int S : sizes) {
+        for (int S : col_sizes) {
             const int M = S, N = S, K = S;
             const int N_local = N / active_gpus;
 
@@ -322,7 +328,7 @@ int main(int argc, char** argv) {
     // =====================================================================
     // Experiment 2: Weak Scaling
     // =====================================================================
-    printf("\n===== Exp 2: Weak Scaling — Fixed M=N_local=K=2048 per GPU =====\n");
+    printf("\n===== Exp 2: Weak Scaling — per-GPU tile sweep × GPU count =====\n");
     printf("%-6s %-6s %-6s %-6s  %10s %10s  %10s %10s  %10s %10s  %8s\n", "M", "N_tot", "K",
            "GPUs", "GEMM(ms)", "GEMM_std", "Comm(ms)", "Comm_std", "Total(ms)", "Total_std",
            "GFLOPS");
@@ -330,45 +336,49 @@ int main(int argc, char** argv) {
            "-----------------------\n");
 
     for (int active_gpus : scaling_counts) {
-        constexpr int M = 2048, K = 2048, N_local = 2048;
-        const int N_total = N_local * active_gpus;
+        for (int per_gpu : weak_sizes) {
+            const int M = per_gpu, K = per_gpu, N_local = per_gpu;
+            const int N_total = N_local * active_gpus;
 
-        std::vector<ColParallelBuffers> bufs;
-        bufs.reserve(active_gpus);
-        for (int g = 0; g < active_gpus; g++) bufs.emplace_back(g, M, K, N_local, N_total);
+            std::vector<ColParallelBuffers> bufs;
+            bufs.reserve(active_gpus);
+            for (int g = 0; g < active_gpus; g++) bufs.emplace_back(g, M, K, N_local, N_total);
 
-        BenchStats gemm = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
-            auto& ctx = contexts[g];
-            ctx.activate();
-            kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
-                          ctx.compute_stream);
-            ctx.compute_stream.synchronize();
-        });
-
-        BenchStats comm{};
-        if (active_gpus > 1) {
-            comm = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
+            BenchStats gemm = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
                 auto& ctx = contexts[g];
                 ctx.activate();
-
-                NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local,
-                                         ncclFloat, comms.get(active_gpus, g), ctx.comm_stream));
-                ctx.comm_stream.synchronize();
+                kernel.launch(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(), M, N_local, K,
+                              ctx.compute_stream);
+                ctx.compute_stream.synchronize();
             });
+
+            BenchStats comm{};
+            if (active_gpus > 1) {
+                comm = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
+                    auto& ctx = contexts[g];
+                    ctx.activate();
+
+                    NCCL_CHECK(ncclAllGather(bufs[g].Y.get(), bufs[g].Y_full.get(), M * N_local,
+                                             ncclFloat, comms.get(active_gpus, g),
+                                             ctx.comm_stream));
+                    ctx.comm_stream.synchronize();
+                });
+            }
+
+            BenchStats total = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
+                auto& ctx = contexts[g];
+                ctx.activate();
+                column_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
+                                        bufs[g].Y_full.get(), M, N_total, K, active_gpus, g,
+                                        ctx.handle, comms.get(active_gpus, g), ctx.compute_stream,
+                                        kernel);
+                ctx.compute_stream.synchronize();
+            });
+
+            printf("%-6d %-6d %-6d %-6d  %10.3f %10.3f  %10.3f %10.3f  %10.3f %10.3f  %8.1f\n", M,
+                   N_total, K, active_gpus, gemm.mean, gemm.stddev, comm.mean, comm.stddev,
+                   total.mean, total.stddev, gemm_gflops(M, N_total, K, total.mean));
         }
-
-        BenchStats total = benchmark_stats(active_gpus, kWarmup, kRepeat, [&](int g) {
-            auto& ctx = contexts[g];
-            ctx.activate();
-            column_parallel_forward(bufs[g].X.get(), bufs[g].W.get(), bufs[g].Y.get(),
-                                    bufs[g].Y_full.get(), M, N_total, K, active_gpus, g, ctx.handle,
-                                    comms.get(active_gpus, g), ctx.compute_stream, kernel);
-            ctx.compute_stream.synchronize();
-        });
-
-        printf("%-6d %-6d %-6d %-6d  %10.3f %10.3f  %10.3f %10.3f  %10.3f %10.3f  %8.1f\n", M,
-               N_total, K, active_gpus, gemm.mean, gemm.stddev, comm.mean, comm.stddev, total.mean,
-               total.stddev, gemm_gflops(M, N_total, K, total.mean));
     }
 
     // =====================================================================
@@ -379,7 +389,7 @@ int main(int argc, char** argv) {
            "Comm_std", "Ratio");
     printf("----------------------------------------------------------------------\n");
 
-    for (int S : sizes) {
+    for (int S : col_sizes) {
         const int M = S, N = S, K = S;
         const int N_local = N / max_gpus;
 

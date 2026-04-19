@@ -433,7 +433,22 @@ int main(int argc, char** argv) {
     // Align the clock on every node before the first measurement.
     cross_node_barrier(ctxs, barrier_bufs);
 
-    const std::vector<int> sizes = {2048, 4096, 8192, 16384, 32768};
+    // Size lists tuned to the per-GPU memory budget at 16 GPUs x 80 GB.
+    //   col_sizes  -- column-parallel experiments (Exp 1, 3).  Needs only
+    //                 2*S^2 per GPU (X, Y_full are full; W, Y are sharded),
+    //                 so we can push up to 65536 comfortably (34 GB/GPU).
+    //   mlp_sizes  -- MLP fwd+bwd (Exp 5).  Six full M*N buffers per GPU
+    //                 plus gradients; 32768 already ~= 24 GB/GPU, 49152
+    //                 would exceed 80 GB with NCCL workspace overhead.
+    //   ovlp_sizes -- row-parallel overlap (Exp 6).  Four full M*N output
+    //                 buffers; 49152 fits (37 GB/GPU) but 65536 would not.
+    //   weak_sizes -- per-GPU tile sizes for the weak-scaling sweep.  All
+    //                 fit easily because only W, Y are full while X, Y_full
+    //                 are per-tile.
+    const std::vector<int> col_sizes  = {2048, 4096, 8192, 16384, 32768, 49152, 65536};
+    const std::vector<int> mlp_sizes  = {2048, 4096, 8192, 16384, 32768};
+    const std::vector<int> ovlp_sizes = {2048, 4096, 8192, 16384, 32768, 49152};
+    const std::vector<int> weak_sizes = {2048, 4096, 8192};
     constexpr int kWarmup = 5;
     constexpr int kRepeat = 20;
 
@@ -450,7 +465,7 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    for (int S : sizes) {
+    for (int S : col_sizes) {
         const int M = S, N = S, K = S;
         const int N_local = N / env.world_size;
 
@@ -493,10 +508,10 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
-    // Experiment 2: Weak Scaling (per-GPU 2048^3, at world_size)
+    // Experiment 2: Weak Scaling — sweep per-GPU tile size
     // =====================================================================
     if (is_master) {
-        printf("\n===== Exp 2: Weak Scaling — Fixed M=N_local=K=2048 per GPU =====\n");
+        printf("\n===== Exp 2: Weak Scaling — per-GPU tile sweep =====\n");
         printf("%-6s %-6s %-6s %-6s  %10s %10s  %10s %10s  %10s %10s  %8s\n", "M", "N_tot", "K",
                "GPUs", "GEMM(ms)", "GEMM_std", "Comm(ms)", "Comm_std", "Total(ms)", "Total_std",
                "GFLOPS");
@@ -504,8 +519,8 @@ int main(int argc, char** argv) {
                "-----------------------\n");
         fflush(stdout);
     }
-    {
-        constexpr int M = 2048, K = 2048, N_local = 2048;
+    for (int per_gpu : weak_sizes) {
+        const int M = per_gpu, K = per_gpu, N_local = per_gpu;
         const int N_total = N_local * env.world_size;
 
         std::vector<ColParallelBuffers> bufs;
@@ -558,7 +573,7 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    for (int S : sizes) {
+    for (int S : col_sizes) {
         const int M = S, N = S, K = S;
         const int N_local = N / env.world_size;
 
@@ -647,7 +662,8 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    for (int S : sizes) {
+    // Square shape: M = K = H = N = S (what the original experiment tested).
+    for (int S : mlp_sizes) {
         const int M = S, K = S, H = S, N = S;
         const int H_local = H / env.world_size;
 
@@ -686,6 +702,75 @@ int main(int argc, char** argv) {
     }
 
     // =====================================================================
+    // Experiment 5b: GPT-style MLP (hidden expansion ratio = 4)
+    // Shape:  X [M, K] -> W1 [K, 4K] -> Hidden [M, 4K] -> W2 [4K, K] -> Y [M, K]
+    // This is the real transformer FFN block; M is batch*seq, K is hidden dim.
+    // H_local = 4*K / world_size, which is sharded across GPUs.
+    // =====================================================================
+    if (is_master) {
+        printf("\n===== Exp 5b: GPT-style MLP (H = 4*K, %d GPUs) =====\n", env.world_size);
+        printf("%-6s %-6s %-6s %-6s  %10s %10s  %10s %10s  %10s\n", "M", "K", "H", "N", "Fwd(ms)",
+               "Fwd_std", "Bwd(ms)", "Bwd_std", "Total(ms)");
+        printf("------------------------------------------------------------------------"
+               "-----\n");
+        fflush(stdout);
+    }
+
+    // (M, K) pairs for the transformer FFN.  K is the hidden dim; H = 4K is
+    // the intermediate dim (sharded).  M = batch*seq (not sharded).  We keep
+    // the per-GPU footprint modest: biggest M*K + M*K/4 (hidden shard) terms.
+    struct MLPShape {
+        int M;
+        int K;
+    };
+    const std::vector<MLPShape> mlp_shapes = {
+        { 8192, 2048},   // GPT-2 style
+        {16384, 4096},   // mid-size
+        {32768, 8192},   // Llama-7B-ish (per-layer)
+        {32768, 12288},  // GPT-3 175B hidden=12288
+    };
+
+    for (auto sh : mlp_shapes) {
+        const int M = sh.M;
+        const int K = sh.K;
+        const int H = 4 * K;
+        const int N = K;
+        const int H_local = H / env.world_size;
+
+        std::vector<MLPBuffers> bufs;
+        bufs.reserve(env.local_gpus);
+        for (int g = 0; g < env.local_gpus; g++) bufs.emplace_back(g, M, K, H_local, N);
+
+        cross_node_barrier(ctxs, barrier_bufs);
+        BenchStats fwd = benchmark_stats(env.local_gpus, kWarmup, kRepeat, [&](int g) {
+            activate(*ctxs[g]);
+            parallel_mlp_forward(bufs[g].X.get(), bufs[g].W1.get(), bufs[g].W2.get(),
+                                 bufs[g].Hidden.get(), bufs[g].YPartial.get(), bufs[g].Y.get(), M,
+                                 K, H, N, env.world_size, ctxs[g]->world_rank, ctxs[g]->handle,
+                                 ctxs[g]->comm, ctxs[g]->compute_stream, kernel);
+            ctxs[g]->compute_stream.synchronize();
+        });
+
+        cross_node_barrier(ctxs, barrier_bufs);
+        BenchStats bwd = benchmark_stats(env.local_gpus, kWarmup, kRepeat, [&](int g) {
+            activate(*ctxs[g]);
+            parallel_mlp_backward(bufs[g].X.get(), bufs[g].W1.get(), bufs[g].W2.get(),
+                                  bufs[g].Hidden.get(), bufs[g].dY.get(), bufs[g].dW1.get(),
+                                  bufs[g].dW2.get(), bufs[g].dHidden.get(), bufs[g].dXPartial.get(),
+                                  bufs[g].dX.get(), M, K, H, N, env.world_size,
+                                  ctxs[g]->world_rank, ctxs[g]->handle, ctxs[g]->comm,
+                                  ctxs[g]->compute_stream, kernel);
+            ctxs[g]->compute_stream.synchronize();
+        });
+
+        if (is_master) {
+            printf("%-6d %-6d %-6d %-6d  %10.3f %10.3f  %10.3f %10.3f  %10.3f\n", M, K, H, N,
+                   fwd.mean, fwd.stddev, bwd.mean, bwd.stddev, fwd.mean + bwd.mean);
+            fflush(stdout);
+        }
+    }
+
+    // =====================================================================
     // Experiment 6: Communication-Compute Overlap (at world_size)
     // =====================================================================
     if (is_master) {
@@ -698,7 +783,7 @@ int main(int argc, char** argv) {
         fflush(stdout);
     }
 
-    for (int S : sizes) {
+    for (int S : ovlp_sizes) {
         const int M = S, N = S, K = S;
         const int K_local = K / env.world_size;
         constexpr int num_chunks = 4;
