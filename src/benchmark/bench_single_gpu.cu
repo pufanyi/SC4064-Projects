@@ -152,15 +152,20 @@ int main(int argc, char** argv) {
         printf("\n");
     }
 
-    // Table 3: detail at M=N=K=2048
-    printf("\n===== Detailed Timing at M=N=K=2048 (ms, n=%d) =====\n", kRepeat);
+    // Table 3: detail at M=N=K=4096.  Picked so all kernels (including the
+    // slow naive/uncoalesced ones) have reached steady-state GFLOPS -- at
+    // 2048 cuBLAS runs in ~0.35 ms (near timer noise floor) and the naive
+    // kernels haven't climbed to their peak yet, so the stats aren't
+    // comparable across rows.
+    constexpr int kDetailSize = 4096;
+    printf("\n===== Detailed Timing at M=N=K=%d (ms, n=%d) =====\n", kDetailSize, kRepeat);
     printf("%-20s  %10s  %10s  %10s  %10s  %10s\n", "Kernel", "mean", "median", "stddev", "min",
            "max");
     for (int i = 0; i < 80; i++) printf("-");
     printf("\n");
     int mid_idx = -1;
     for (size_t si = 0; si < sizes.size(); si++)
-        if (sizes[si] == 2048) mid_idx = static_cast<int>(si);
+        if (sizes[si] == kDetailSize) mid_idx = static_cast<int>(si);
     if (mid_idx >= 0) {
         for (int k = 0; k < KernelRegistry::count(); k++) {
             const auto& s = all_stats[k][mid_idx];

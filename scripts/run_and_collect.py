@@ -58,7 +58,7 @@ def run(cmd, **kw):
 
 
 def parse_single_gpu(text):
-    result = {"correctness": {}, "performance": {}, "stddev_pct": {}, "detail_2048": {}}
+    result = {"correctness": {}, "performance": {}, "stddev_pct": {}, "detail": {}}
 
     for m in re.finditer(r"^(\S+)\s*:\s*(PASS|FAIL).*", text, re.MULTILINE):
         result["correctness"][m.group(1)] = m.group(2)
@@ -123,9 +123,10 @@ def parse_single_gpu(text):
         std_rows, _ = _parse_kernel_by_size(std_block)
         result["stddev_pct"] = std_rows
 
-    # Optional: detailed timing table at M=N=K=2048
-    m_det = re.search(r"Detailed Timing at M=N=K=2048[^\n]*\n", text)
+    # Optional: detailed timing table (size is whatever the binary picked).
+    m_det = re.search(r"Detailed Timing at M=N=K=(\d+)[^\n]*\n", text)
     if m_det:
+        result["detail_size"] = int(m_det.group(1))
         det_block = text[m_det.end() :]
         nxt = re.search(r"^=====|^\nDone\.", det_block, re.MULTILINE)
         det_block = det_block[: nxt.start()] if nxt else det_block
@@ -143,7 +144,7 @@ def parse_single_gpu(text):
                 mean, median, stddev, mn, mx = (float(x) for x in parts[1:])
             except ValueError:
                 continue
-            result["detail_2048"][k] = {
+            result["detail"][k] = {
                 "mean": mean,
                 "median": median,
                 "stddev": stddev,
@@ -193,6 +194,21 @@ def parse_experiments(text):
             vals = line.split()
             if len(vals) != len(cols):
                 continue
+            # Reject rows that aren't benchmark data -- the first column is
+            # always an integer M (or a kernel name in Exp 4).  Interleaved
+            # NCCL INFO / WARN lines occasionally match len(cols) by accident
+            # (e.g. "[Proxy Progress] Device 1 CPU core 22"), so drop anything
+            # whose first token isn't an int and isn't a known kernel name.
+            first = vals[0]
+            _KERNELS = {
+                "Naive", "Coalesced", "Uncoalesced", "SmemTiling",
+                "BlockTile1D", "BlockTile2D", "Vectorized", "WarpTile", "cuBLAS",
+            }
+            try:
+                int(first)
+            except ValueError:
+                if first not in _KERNELS:
+                    continue
             row = {}
             for c, v in zip(cols, vals, strict=True):
                 c = re.sub(r"\(.*?\)$", "", c)

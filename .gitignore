@@ -8,3 +8,4 @@ results/*.sqlite
 *.o
 *.d
 __pycache__/
+results_bak/

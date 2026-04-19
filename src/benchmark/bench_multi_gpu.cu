@@ -260,13 +260,16 @@ int main(int argc, char** argv) {
     CommRegistry comms(max_gpus);
     const auto scaling_counts = build_scaling_counts(max_gpus);
     // Single-node bench exercises p=1 as part of the scaling sweep, so 4 * S^2
-    // has to fit on one GPU.  32768 -> 16 GB/GPU is safe on 80 GB even after
-    // some CUDA pool fragmentation; 49152 -> 37 GB OOMs in practice once the
-    // pool has cycled through several sizes.  Larger sizes (49152/65536) live
-    // in bench_multi_node where world_size >= 16 keeps per-GPU memory bounded.
-    const std::vector<int> col_sizes = {2048, 4096, 8192, 16384, 32768};
-    const std::vector<int> mlp_sizes = {2048, 4096, 8192, 16384, 32768};
-    const std::vector<int> ovlp_sizes = {2048, 4096, 8192, 16384, 32768};
+    // has to fit on one GPU.  32768 -> 16 GB/GPU nominally fits on 80 GB, but
+    // transitioning from (p=1, S=32768) to (p=2, S=2048) OOMs in practice --
+    // the freed 16 GB from the p=1 iteration doesn't make it back into the
+    // allocator cleanly across the NCCL workspace + multi-thread context
+    // boundary, so the next cudaMalloc fails.  Cap at 16384 to keep the whole
+    // sweep (Exp 1-6) green.  Larger sizes live in bench_multi_node where
+    // world_size >= 16 keeps per-GPU memory bounded.
+    const std::vector<int> col_sizes = {2048, 4096, 8192, 16384};
+    const std::vector<int> mlp_sizes = {2048, 4096, 8192, 16384};
+    const std::vector<int> ovlp_sizes = {2048, 4096, 8192, 16384};
     const std::vector<int> weak_sizes = {2048, 4096, 8192};
     constexpr int kWarmup = 5;
     constexpr int kRepeat = 20;

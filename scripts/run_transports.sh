@@ -12,7 +12,12 @@
 #   ib     — force InfiniBand
 #   tcp    — force TCP socket (NCCL_IB_DISABLE=1)
 #   ring   — IB + force ring algorithm
-#   tree   — IB + force tree algorithm
+#
+# NOTE: NCCL_ALGO=Tree is intentionally excluded -- NCCL's Tree algorithm
+# does not support AllGather (our Exp 1-5 primary op), so the whole
+# benchmark crashes at the first ncclAllGather call with
+# "no algorithm/protocol available for function AllGather ... NCCL_ALGO
+# was set to Tree".  Re-enable only for a ReduceScatter-only workload.
 #
 # Output files (master):
 #   results/multi_node_${NTOTAL}gpu_<tag>.txt
@@ -51,8 +56,7 @@ if [ -z "${TRANSPORTS:-}" ]; then
     TRANSPORTS='auto|
 ib|NCCL_NET=IB NCCL_IB_DISABLE=0
 tcp|NCCL_IB_DISABLE=1
-ring|NCCL_ALGO=Ring
-tree|NCCL_ALGO=Tree'
+ring|NCCL_ALGO=Ring'
 fi
 
 # Split TRANSPORTS into per-entry list (one per line)
