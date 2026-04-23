@@ -99,9 +99,9 @@ KERNEL_COLORS = [
 
 TRANSPORT_STYLE = {
     "auto": {"label": "Auto (NCCL default)", "color": PAL["blue"], "marker": "o"},
-    "ib":   {"label": "InfiniBand",          "color": PAL["green"], "marker": "s"},
-    "ring": {"label": "IB + Ring",           "color": PAL["purple"], "marker": "^"},
-    "tcp":  {"label": "TCP socket",          "color": PAL["red"], "marker": "D"},
+    "ib": {"label": "InfiniBand", "color": PAL["green"], "marker": "s"},
+    "ring": {"label": "IB + Ring", "color": PAL["purple"], "marker": "^"},
+    "tcp": {"label": "TCP socket", "color": PAL["red"], "marker": "D"},
 }
 
 
@@ -185,10 +185,10 @@ def plot_cublas_pct(data):
 # Plot 3: Roofline with kernel data points
 # ══════════════════════════════════════════════════════════════════════════
 def plot_roofline(data):
-    # H100 PCIe FP32 dense FMA peak = 132 SM × 128 FP32 ALU × 1.98 GHz × 2 (FMA)
-    # ≈ 67 TFLOPS.  The device-query in bench_single_gpu prints 33.5 TFLOPS
+    # H100 PCIe FP32 dense FMA peak = 132 SM x 128 FP32 ALU x 1.98 GHz x 2 (FMA)
+    # ~= 67 TFLOPS.  The device-query in bench_single_gpu prints 33.5 TFLOPS
     # because it doesn't double-count the multiply-add; the real SGEMM ceiling
-    # is 2× that.
+    # is 2x that.
     peak_gflops = 67000
     peak_bw = 3350  # 3.35 TB/s HBM3
 
@@ -196,7 +196,7 @@ def plot_roofline(data):
     size = "4096"
 
     # SGEMM operational intensity at size N:
-    #   ops = 2 N^3 FMA-flops;  bytes = 3 N^2 × 4 B  (A, B, C in fp32)
+    #   ops = 2 N^3 FMA-flops;  bytes = 3 N^2 x 4 B  (A, B, C in fp32)
     N = int(size)
     oi_gemm = (2.0 * N**3) / (3.0 * N**2 * 4)
 
@@ -207,14 +207,26 @@ def plot_roofline(data):
 
     ridge = peak_gflops / peak_bw
     ax.axvline(ridge, color="gray", ls=":", alpha=0.5)
-    ax.text(ridge, peak_gflops * 1.45,
-            f"ridge\n{ridge:.0f} FLOP/B",
-            fontsize=8, color="gray", ha="center", va="bottom")
+    ax.text(
+        ridge,
+        peak_gflops * 1.45,
+        f"ridge\n{ridge:.0f} FLOP/B",
+        fontsize=8,
+        color="gray",
+        ha="center",
+        va="bottom",
+    )
 
     ax.axvline(oi_gemm, color=PAL["blue"], ls=":", alpha=0.35, lw=1)
-    ax.text(oi_gemm, peak_gflops * 1.45,
-            f"SGEMM OI\n{oi_gemm:.0f} FLOP/B",
-            fontsize=8, color=PAL["blue"], ha="center", va="bottom")
+    ax.text(
+        oi_gemm,
+        peak_gflops * 1.45,
+        f"SGEMM OI\n{oi_gemm:.0f} FLOP/B",
+        fontsize=8,
+        color=PAL["blue"],
+        ha="center",
+        va="bottom",
+    )
 
     markers = ["v", "^", "s", "D", "p", "h", "*", "o"]
     # Slight horizontal jitter so markers at identical OI don't fully occlude.
@@ -239,8 +251,9 @@ def plot_roofline(data):
     ax.set_title(f"Roofline — H100 FP32, SGEMM at $N={size}$")
     ax.set_xlim(0.08, 1500)
     ax.set_ylim(100, peak_gflops * 2.0)
-    ax.legend(fontsize=7.5, ncol=2, loc="lower right", frameon=True,
-              facecolor="white", framealpha=0.95)
+    ax.legend(
+        fontsize=7.5, ncol=2, loc="lower right", frameon=True, facecolor="white", framealpha=0.95
+    )
     fig.savefig(FIGS / "roofline.pdf")
     plt.close(fig)
     print("  roofline.pdf")
@@ -278,9 +291,7 @@ def plot_strong_scaling(data):
         t1 = sn[0]["Total"]
         max_g = max(gpus)
         g_ref = np.array([1, max_g])
-        ax.plot(g_ref, t1 / g_ref,
-                linestyle=(0, (3, 2)), color=COLORS[i],
-                alpha=0.65, lw=1.3)
+        ax.plot(g_ref, t1 / g_ref, linestyle=(0, (3, 2)), color=COLORS[i], alpha=0.65, lw=1.3)
 
     ax.axvline(8.5, color=PAL["gray"], ls="--", alpha=0.4, lw=1)
     ax.set_xscale("log", base=2)
@@ -292,14 +303,19 @@ def plot_strong_scaling(data):
     ax.set_title("Strong Scaling — Column-Parallel Forward")
     # Add a single entry in the legend so readers know what the dashed guides
     # mean, then let matplotlib autoscale so the ideal guides are fully visible.
-    ax.plot([], [], linestyle=(0, (3, 2)), color=PAL["gray"],
-            alpha=0.75, lw=1.3, label="Ideal $T_1 / P$")
+    ax.plot(
+        [],
+        [],
+        linestyle=(0, (3, 2)),
+        color=PAL["gray"],
+        alpha=0.75,
+        lw=1.3,
+        label="Ideal $T_1 / P$",
+    )
     # Legend sits outside the axes to the right so it never clips the data lines.
-    ax.legend(title="Matrix size", frameon=True, loc="center left",
-              bbox_to_anchor=(1.02, 0.5))
+    ax.legend(title="Matrix size", frameon=True, loc="center left", bbox_to_anchor=(1.02, 0.5))
     _, ytop = ax.get_ylim()
-    ax.text(8.7, ytop * 0.45, "NVLink │ IB",
-            fontsize=8.5, color=PAL["gray"], rotation=90, va="top")
+    ax.text(8.7, ytop * 0.45, "NVLink │ IB", fontsize=8.5, color=PAL["gray"], rotation=90, va="top")
     fig.savefig(FIGS / "strong_scaling.pdf")
     plt.close(fig)
     print("  strong_scaling.pdf")
@@ -356,22 +372,35 @@ def plot_weak_scaling(data):
         gflops = [r["GFLOPS"] for r in sub]
 
         ax1.plot(
-            gpus, times,
-            "o-", label=f"tile = {tile}",
-            color=COLORS[i], lw=1.8, markersize=5,
+            gpus,
+            times,
+            "o-",
+            label=f"tile = {tile}",
+            color=COLORS[i],
+            lw=1.8,
+            markersize=5,
         )
-        ax2.plot(gpus, gflops, "s-",
-                 label=f"tile = {tile}",
-                 color=COLORS[i], lw=1.8, markersize=5)
+        ax2.plot(gpus, gflops, "s-", label=f"tile = {tile}", color=COLORS[i], lw=1.8, markersize=5)
 
     # Ideal (flat time, linear throughput) reference on each, relative to tile=2048
     base = next(r for r in rows if r["M"] == tiles[0] and r["GPUs"] == 1)
-    ax1.axhline(base["Total"],
-                linestyle=(0, (3, 2)), color=PAL["gray"],
-                alpha=0.75, lw=1.3, label="Ideal (tile=2048)")
-    ax2.plot(all_gpus, [base["GFLOPS"] * g for g in all_gpus],
-             linestyle=(0, (3, 2)), color=PAL["gray"],
-             alpha=0.75, lw=1.3, label="Ideal (tile=2048)")
+    ax1.axhline(
+        base["Total"],
+        linestyle=(0, (3, 2)),
+        color=PAL["gray"],
+        alpha=0.75,
+        lw=1.3,
+        label="Ideal (tile=2048)",
+    )
+    ax2.plot(
+        all_gpus,
+        [base["GFLOPS"] * g for g in all_gpus],
+        linestyle=(0, (3, 2)),
+        color=PAL["gray"],
+        alpha=0.75,
+        lw=1.3,
+        label="Ideal (tile=2048)",
+    )
 
     for ax in (ax1, ax2):
         ax.set_xlabel("Number of GPUs")
@@ -385,8 +414,15 @@ def plot_weak_scaling(data):
 
     # Shared legend below both subplots so it never overlaps the data.
     handles, labels = ax1.get_legend_handles_labels()
-    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=True,
-               fontsize=9, bbox_to_anchor=(0.5, -0.02))
+    fig.legend(
+        handles,
+        labels,
+        loc="lower center",
+        ncol=4,
+        frameon=True,
+        fontsize=9,
+        bbox_to_anchor=(0.5, -0.02),
+    )
     fig.tight_layout(rect=[0, 0.06, 1, 1])
     fig.savefig(FIGS / "weak_scaling.pdf")
     plt.close(fig)
@@ -406,14 +442,19 @@ def plot_comm_compute_size(data):
     x = np.arange(len(sizes))
     w = 0.36
 
-    ax.bar(x - w / 2, gemm, w, label="GEMM", color=PAL["blue"],
-           edgecolor="white", linewidth=0.4)
-    ax.bar(x + w / 2, comm, w, label="Communication", color=PAL["orange"],
-           edgecolor="white", linewidth=0.4)
+    ax.bar(x - w / 2, gemm, w, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x + w / 2,
+        comm,
+        w,
+        label="Communication",
+        color=PAL["orange"],
+        edgecolor="white",
+        linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         y = max(r["GEMM"], r["Comm"])
-        ax.text(i, y * 1.12, f"ratio {r['Ratio']:.2f}",
-                ha="center", fontsize=8, color=PAL["gray"])
+        ax.text(i, y * 1.12, f"ratio {r['Ratio']:.2f}", ha="center", fontsize=8, color=PAL["gray"])
 
     ax.set_xlabel("Matrix Size ($M = N = K$)")
     ax.set_ylabel("Time (ms)")
@@ -435,8 +476,7 @@ def plot_comm_compute_kernel(data):
     # Drop Uncoalesced -- its 35 ms GEMM squashes the chart for everyone else.
     rows = [r for r in rows if r["Kernel"] != "Uncoalesced"]
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.6, 3.8),
-                                    gridspec_kw={"width_ratios": [3, 2]})
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(9.6, 3.8), gridspec_kw={"width_ratios": [3, 2]})
 
     labels = [KERNEL_LABELS.get(r["Kernel"], r["Kernel"]) for r in rows]
     gemm = [r["GEMM"] for r in rows]
@@ -444,10 +484,17 @@ def plot_comm_compute_kernel(data):
     ratio = [r["Ratio"] for r in rows]
     y = np.arange(len(rows))
 
-    ax1.barh(y, gemm, 0.62, label="GEMM", color=PAL["blue"],
-             edgecolor="white", linewidth=0.4)
-    ax1.barh(y, comm, 0.62, left=gemm, label="Communication",
-             color=PAL["orange"], edgecolor="white", linewidth=0.4)
+    ax1.barh(y, gemm, 0.62, label="GEMM", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax1.barh(
+        y,
+        comm,
+        0.62,
+        left=gemm,
+        label="Communication",
+        color=PAL["orange"],
+        edgecolor="white",
+        linewidth=0.4,
+    )
     ax1.set_yticks(y)
     ax1.set_yticklabels(labels)
     ax1.set_xlabel("Time (ms)")
@@ -457,8 +504,7 @@ def plot_comm_compute_kernel(data):
 
     norm = np.array(ratio) / max(ratio)
     ratio_colors = plt.cm.YlOrRd(norm * 0.8 + 0.1)
-    ax2.barh(y, ratio, 0.62, color=ratio_colors,
-             edgecolor="white", linewidth=0.4)
+    ax2.barh(y, ratio, 0.62, color=ratio_colors, edgecolor="white", linewidth=0.4)
     ax2.set_yticks(y)
     ax2.set_yticklabels(labels)
     ax2.set_xlabel("Comm / Compute Ratio")
@@ -467,8 +513,7 @@ def plot_comm_compute_kernel(data):
     for i, v in enumerate(ratio):
         ax2.text(v + 0.02, i, f"{v:.2f}", va="center", fontsize=8.5)
 
-    fig.suptitle("Local GEMM Kernel vs Communication ($N = 4096$, 8 GPUs)",
-                 fontsize=11.5, y=1.02)
+    fig.suptitle("Local GEMM Kernel vs Communication ($N = 4096$, 8 GPUs)", fontsize=11.5, y=1.02)
     fig.tight_layout()
     fig.savefig(FIGS / "comm_compute_ratio_kernel.pdf")
     plt.close(fig)
@@ -487,15 +532,27 @@ def plot_mlp(data):
     bwd = np.array([r["Bwd"] for r in rows])
     x = np.arange(len(sizes))
 
-    ax.bar(x, fwd, 0.5, label="Forward", color=PAL["blue"],
-           edgecolor="white", linewidth=0.4)
-    ax.bar(x, bwd, 0.5, bottom=fwd, label="Backward", color=PAL["red"],
-           edgecolor="white", linewidth=0.4)
+    ax.bar(x, fwd, 0.5, label="Forward", color=PAL["blue"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x,
+        bwd,
+        0.5,
+        bottom=fwd,
+        label="Backward",
+        color=PAL["red"],
+        edgecolor="white",
+        linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         ratio = r["Bwd"] / r["Fwd"]
-        ax.text(i, r["Fwd"] + r["Bwd"] + (r["Fwd"] + r["Bwd"]) * 0.06,
-                f"{ratio:.1f}\N{MULTIPLICATION SIGN}",
-                ha="center", fontsize=8.5, color=PAL["gray"])
+        ax.text(
+            i,
+            r["Fwd"] + r["Bwd"] + (r["Fwd"] + r["Bwd"]) * 0.06,
+            f"{ratio:.1f}\N{MULTIPLICATION SIGN}",
+            ha="center",
+            fontsize=8.5,
+            color=PAL["gray"],
+        )
 
     ax.set_xlabel("Matrix Size ($M = H = N$)")
     ax.set_ylabel("Time (ms)")
@@ -522,19 +579,38 @@ def plot_overlap(data):
     x = np.arange(len(sizes))
     w = 0.33
 
-    ax.bar(x - w / 2, no_ovlp, w, label="No overlap",
-           color=PAL["blue"], edgecolor="white", linewidth=0.4)
-    ax.bar(x + w / 2, ovlp, w, label="Overlap (4 chunks)",
-           color=PAL["green"], edgecolor="white", linewidth=0.4)
+    ax.bar(
+        x - w / 2,
+        no_ovlp,
+        w,
+        label="No overlap",
+        color=PAL["blue"],
+        edgecolor="white",
+        linewidth=0.4,
+    )
+    ax.bar(
+        x + w / 2,
+        ovlp,
+        w,
+        label="Overlap (4 chunks)",
+        color=PAL["green"],
+        edgecolor="white",
+        linewidth=0.4,
+    )
     for i, r in enumerate(rows):
         top = max(r["NoOvlp"], r["Overlap"])
-        ax.text(i, top * 1.1,
-                f"{r['Speedup']:.2f}\N{MULTIPLICATION SIGN}",
-                ha="center", fontsize=8.5, color=PAL["gray"])
+        ax.text(
+            i,
+            top * 1.1,
+            f"{r['Speedup']:.2f}\N{MULTIPLICATION SIGN}",
+            ha="center",
+            fontsize=8.5,
+            color=PAL["gray"],
+        )
 
     ax.set_xlabel("Matrix Size ($M = N = K$)")
     ax.set_ylabel("Time (ms)")
-    ax.set_title("Communication–Compute Overlap (Row Parallel, 8 GPUs)")
+    ax.set_title("Communication-Compute Overlap (Row Parallel, 8 GPUs)")
     ax.set_xticks(x)
     ax.set_xticklabels(sizes)
     ax.set_yscale("log")
@@ -558,14 +634,26 @@ def plot_transport_sweep(data):
         rows = sorted(transports[tag]["exp1"]["data"], key=lambda r: r["M"])
         sizes = [r["M"] for r in rows]
         comm = [r["Comm"] for r in rows]
-        ax1.plot(sizes, comm,
-                 f"{style['marker']}-", label=style["label"],
-                 color=style["color"], lw=1.8, markersize=6)
+        ax1.plot(
+            sizes,
+            comm,
+            f"{style['marker']}-",
+            label=style["label"],
+            color=style["color"],
+            lw=1.8,
+            markersize=6,
+        )
 
         r3 = sorted(transports[tag]["exp3"]["data"], key=lambda r: r["Size"])
-        ax2.plot([r["Size"] for r in r3], [r["Ratio"] for r in r3],
-                 f"{style['marker']}-", label=style["label"],
-                 color=style["color"], lw=1.8, markersize=6)
+        ax2.plot(
+            [r["Size"] for r in r3],
+            [r["Ratio"] for r in r3],
+            f"{style['marker']}-",
+            label=style["label"],
+            color=style["color"],
+            lw=1.8,
+            markersize=6,
+        )
 
     ax1.set_xscale("log", base=2)
     ax1.set_yscale("log")

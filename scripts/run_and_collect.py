@@ -201,8 +201,15 @@ def parse_experiments(text):
             # whose first token isn't an int and isn't a known kernel name.
             first = vals[0]
             _KERNELS = {
-                "Naive", "Coalesced", "Uncoalesced", "SmemTiling",
-                "BlockTile1D", "BlockTile2D", "Vectorized", "WarpTile", "cuBLAS",
+                "Naive",
+                "Coalesced",
+                "Uncoalesced",
+                "SmemTiling",
+                "BlockTile1D",
+                "BlockTile2D",
+                "Vectorized",
+                "WarpTile",
+                "cuBLAS",
             }
             try:
                 int(first)
@@ -289,7 +296,7 @@ def mode_reparse(outpath: Path):
         out["single_gpu"] = {
             **parse_single_gpu(raw),
             "raw": raw,
-            **{k: out["single_gpu"][k] for k in out["single_gpu"] if k in ("elapsed_s",)},
+            **{k: out["single_gpu"][k] for k in out["single_gpu"] if k == "elapsed_s"},
         }
     if "multi_gpu" in out and "raw" in out["multi_gpu"]:
         raw = out["multi_gpu"]["raw"]
